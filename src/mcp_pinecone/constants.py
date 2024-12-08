@@ -1,6 +1,9 @@
 # Index name
 import os
 import argparse
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 def get_pinecone_config():
@@ -18,11 +21,32 @@ def get_pinecone_config():
     args = parser.parse_args()
 
     # Use command line arguments if provided, otherwise fall back to environment variables
-    PINECONE_INDEX_NAME = args.index_name or os.getenv("PINECONE_INDEX_NAME")
-    PINECONE_API_KEY = args.api_key or os.getenv("PINECONE_API_KEY")
+    index_name = args.index_name or os.getenv("PINECONE_INDEX_NAME")
+    api_key = args.api_key or os.getenv("PINECONE_API_KEY")
 
-    return PINECONE_INDEX_NAME, PINECONE_API_KEY
+    # Set default index name if none provided
+    if not index_name:
+        index_name = "mcp-pinecone-index"
+        print(f"No index name provided, using default: {index_name}")
+
+    # Validate API key
+    if not api_key:
+        raise ValueError(
+            "Pinecone API key is required. Provide it via --api-key argument or PINECONE_API_KEY environment variable"
+        )
+
+    return index_name, api_key
 
 
 # Get configuration values
 PINECONE_INDEX_NAME, PINECONE_API_KEY = get_pinecone_config()
+
+# Validate configuration after loading
+if not PINECONE_INDEX_NAME or not PINECONE_API_KEY:
+    raise ValueError(
+        "Missing required configuration. Ensure PINECONE_INDEX_NAME and PINECONE_API_KEY "
+        "are set either via environment variables or command line arguments."
+    )
+
+# Export values for use in other modules
+__all__ = ["PINECONE_INDEX_NAME", "PINECONE_API_KEY"]

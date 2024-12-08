@@ -3,8 +3,8 @@ from mcp.server.models import InitializationOptions
 import mcp.types as types
 from mcp.server import NotificationOptions, Server
 from pydantic import AnyUrl
+import mcp.server.stdio
 from .pinecone import PineconeClient
-from importlib import metadata
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -183,16 +183,13 @@ async def main():
     global pinecone_client
     pinecone_client = PineconeClient()
 
-    # Get the distribution info from the package
-    dist = metadata.distribution("pinecone-mcp")
-
     async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
         await server.run(
             read_stream,
             write_stream,
             InitializationOptions(
-                server_name=dist.metadata["Name"],
-                server_version=dist.version,
+                server_name="pinecone-mcp",  # Hardcoded name instead of using metadata
+                server_version="0.1.0",  # Hardcoded version instead of using metadata
                 capabilities=server.get_capabilities(
                     notification_options=NotificationOptions(),
                     experimental_capabilities={},

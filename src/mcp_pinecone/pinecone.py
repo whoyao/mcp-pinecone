@@ -23,12 +23,21 @@ class PineconeClient:
             indexes = self.pc.list_indexes()
 
             # Check if our index exists
-            if PINECONE_INDEX_NAME not in indexes:
-                logger.info(f"Index {PINECONE_INDEX_NAME} not found. Creating...")
+            if any(index["name"] == PINECONE_INDEX_NAME for index in indexes):
+                logger.info(f"Index {PINECONE_INDEX_NAME} already exists")
+                return
+
+            logger.info(f"Index {PINECONE_INDEX_NAME} not found. Creating...")
+            try:
                 self.create_index()
                 logger.info(f"Index {PINECONE_INDEX_NAME} created successfully")
-            else:
-                logger.info(f"Index {PINECONE_INDEX_NAME} already exists")
+            except Exception as e:
+                if "ALREADY_EXISTS" in str(e):
+                    logger.info(
+                        f"Index {PINECONE_INDEX_NAME} already exists (created concurrently)"
+                    )
+                    return
+                raise
 
         except Exception as e:
             logger.error(f"Error checking/creating index: {e}")
@@ -36,16 +45,21 @@ class PineconeClient:
 
     def create_index(self):
         """Create a serverless index with integrated inference"""
-        return self.pc.create_index(
-            name=PINECONE_INDEX_NAME,
-            dimension=1536,
-            metric="cosine",
-            deletion_protection=False,
-            spec=ServerlessSpec(
-                cloud="aws",
-                region="us-east-1",
-            ),
-        )
+        try:
+            logger.info(f"Creating index {PINECONE_INDEX_NAME}")
+            return self.pc.create_index(
+                name=PINECONE_INDEX_NAME,
+                dimension=1536,
+                metric="cosine",
+                deletion_protection="disabled",
+                spec=ServerlessSpec(
+                    cloud="aws",
+                    region="us-east-1",
+                ),
+            )
+        except Exception as e:
+            logger.error(f"Failed to create index: {e}")
+            raise
 
     async def upsert_records(
         self, records: List[Dict[str, Any]], namespace: Optional[str] = None

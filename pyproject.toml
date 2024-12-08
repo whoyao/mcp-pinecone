@@ -1,0 +1,35 @@
+[project]
+name = "mcp-pinecone"
+version = "0.1.1"
+description = "Read and write to Pinecone from Claude Desktop with Model Context Protocol."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+ "httpx>=0.28.0",
+ "mcp>=1.0.0",
+ "pinecone>=5.4.1",
+ "protobuf>=5.29.0",
+ "python-dotenv>=1.0.1",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+]
+[[project.authors]]
+name = "Navishkar Rao"
+email = "sirmews@gmail.com"
+
+[build-system]
+requires = [ "hatchling",]
+build-backend = "hatchling.build"
+
+[project.scripts]
+mcp-pinecone = "mcp_pinecone:main"
+
+[tool.mcp-pinecone]
+server_name = "mcp-pinecone"
+
+[project.urls]
+Homepage = "https://sirmews.github.io/mcp-pinecone/"
+Issues = "https://github.com/sirmews/mcp-pinecone/issues"

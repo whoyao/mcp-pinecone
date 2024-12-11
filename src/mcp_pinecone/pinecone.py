@@ -1,5 +1,5 @@
 from pinecone import Pinecone, ServerlessSpec
-from typing import AsyncIterator, List, Dict, Any, Optional, Union
+from typing import Iterator, List, Dict, Any, Optional, Union
 from .constants import PINECONE_INDEX_NAME, PINECONE_API_KEY
 from dotenv import load_dotenv
 import logging
@@ -53,7 +53,7 @@ class PineconeClient:
             logger.error(f"Failed to create index: {e}")
             raise
 
-    async def upsert_records(
+    def upsert_records(
         self, records: List[Dict[str, Any]], namespace: Optional[str] = None
     ) -> Dict[str, Any]:
         """
@@ -70,12 +70,12 @@ class PineconeClient:
                 for record in records
             ]
 
-            return await self.index.upsert(vectors=vectors, namespace=namespace)
+            return self.index.upsert(vectors=vectors, namespace=namespace)
         except Exception as e:
             logger.error(f"Error upserting records: {e}")
             raise
 
-    async def search_records(
+    def search_records(
         self,
         query: Union[str, List[float]],
         top_k: int = 10,
@@ -86,7 +86,7 @@ class PineconeClient:
         """Search records using integrated inference"""
         try:
             inputs = {"text": query} if isinstance(query, str) else {"values": query}
-            return await self.index.query(
+            return self.index.query(
                 **inputs,
                 top_k=top_k,
                 namespace=namespace,
@@ -98,7 +98,7 @@ class PineconeClient:
             logger.error(f"Error searching records: {e}")
             raise
 
-    async def delete_records(
+    def delete_records(
         self, ids: List[str], namespace: Optional[str] = None
     ) -> Dict[str, Any]:
         """
@@ -109,13 +109,12 @@ class PineconeClient:
             namespace: Optional namespace to delete from
         """
         try:
-            response = await self.index.delete(ids=ids, namespace=namespace)
-            return response
+            return self.index.delete(ids=ids, namespace=namespace)
         except Exception as e:
             logger.error(f"Error deleting records: {e}")
             raise
 
-    async def fetch_records(
+    def fetch_records(
         self, ids: List[str], namespace: Optional[str] = None
     ) -> Dict[str, Any]:
         """
@@ -126,13 +125,12 @@ class PineconeClient:
             namespace: Optional namespace to fetch from
         """
         try:
-            response = await self.index.fetch(ids=ids, namespace=namespace)
-            return response
+            return self.index.fetch(ids=ids, namespace=namespace)
         except Exception as e:
             logger.error(f"Error fetching records: {e}")
             raise
 
-    async def list_records(
+    def list_records(
         self,
         prefix: Optional[str] = None,
         limit: int = 100,
@@ -143,7 +141,7 @@ class PineconeClient:
         """
         try:
             # Using list_paginated for single-page results
-            response = await self.index.list_paginated(
+            response = self.index.list_paginated(
                 prefix=prefix, limit=limit, namespace=namespace
             )
             return {
@@ -156,30 +154,28 @@ class PineconeClient:
                 else None,
             }
         except Exception as e:
-            logger.error(f"Error listing records: {e}")  # Changed from print to logger
+            logger.error(f"Error listing records: {e}")
             raise
 
     # Optional: Add a method for iterating through all pages
-    async def iterate_records(
+    def iterate_records(
         self,
         prefix: Optional[str] = None,
         limit: int = 100,
         namespace: Optional[str] = None,
-    ) -> AsyncIterator[List[str]]:
+    ) -> Iterator[List[str]]:
         """Iterate through all records using the generator-based list method"""
         try:
-            async for ids in self.index.list(
-                prefix=prefix, limit=limit, namespace=namespace
-            ):
+            for ids in self.index.list(prefix=prefix, limit=limit, namespace=namespace):
                 yield ids
         except Exception as e:
             logger.error(f"Error iterating records: {e}")
             raise
 
-    async def get_index_stats(self) -> Dict[str, Any]:
+    def get_index_stats(self) -> Dict[str, Any]:
         """Get statistics about the index"""
         try:
-            return await self.index.describe_index_stats()
+            return self.index.describe_index_stats()
         except Exception as e:
             logger.error(f"Error getting index stats: {e}")
             raise

@@ -48,5 +48,16 @@ if not PINECONE_INDEX_NAME or not PINECONE_API_KEY:
         "are set either via environment variables or command line arguments."
     )
 
+# Inference API model name
+INFERENCE_MODEL = "multilingual-e5-large"
+
+# Inference API embedding dimension
+INFERENCE_DIMENSION = 1024
+
 # Export values for use in other modules
-__all__ = ["PINECONE_INDEX_NAME", "PINECONE_API_KEY"]
+__all__ = [
+    "PINECONE_INDEX_NAME",
+    "PINECONE_API_KEY",
+    "INFERENCE_MODEL",
+    "INFERENCE_DIMENSION",
+]

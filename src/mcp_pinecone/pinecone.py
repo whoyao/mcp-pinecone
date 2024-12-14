@@ -1,8 +1,14 @@
 from pinecone import Pinecone, ServerlessSpec
 from typing import Iterator, List, Dict, Any, Optional, Union
-from .constants import PINECONE_INDEX_NAME, PINECONE_API_KEY
+from .constants import (
+    INFERENCE_DIMENSION,
+    PINECONE_INDEX_NAME,
+    PINECONE_API_KEY,
+    INFERENCE_MODEL,
+)
 from dotenv import load_dotenv
 import logging
+import time
 
 load_dotenv()
 
@@ -10,6 +16,10 @@ logger = logging.getLogger(__name__)
 
 
 class PineconeClient:
+    """
+    A client for interacting with Pinecone.
+    """
+
     def __init__(self):
         self.pc = Pinecone(api_key=PINECONE_API_KEY)
         # Initialize index after checking/creating
@@ -21,30 +31,32 @@ class PineconeClient:
         )
 
     def ensure_index_exists(self):
-        """Check if index exists, create if it doesn't"""
+        """
+        Check if index exists, create if it doesn't.
+        """
         try:
             indexes = self.pc.list_indexes()
 
             exists = any(index["name"] == PINECONE_INDEX_NAME for index in indexes)
             if exists:
-                logger.info(f"Index {PINECONE_INDEX_NAME} already exists")
+                logger.warning(f"Index {PINECONE_INDEX_NAME} already exists")
                 return
 
-            logger.info(f"Index {PINECONE_INDEX_NAME} not found. Creating...")
             self.create_index()
-            logger.info(f"Index {PINECONE_INDEX_NAME} created successfully")
 
         except Exception as e:
             logger.error(f"Error checking/creating index: {e}")
             raise
 
     def create_index(self):
-        """Create a serverless index with integrated inference"""
+        """
+        Create a serverless index with integrated inference.
+        """
         try:
             logger.info(f"Creating index {PINECONE_INDEX_NAME}")
             return self.pc.create_index(
                 name=PINECONE_INDEX_NAME,
-                dimension=1536,
+                dimension=INFERENCE_DIMENSION,
                 metric="cosine",
                 deletion_protection="disabled",  # Consider enabling for production
                 spec=ServerlessSpec(cloud="aws", region="us-east-1"),
@@ -53,24 +65,65 @@ class PineconeClient:
             logger.error(f"Failed to create index: {e}")
             raise
 
+    def generate_embeddings(self, text: str) -> List[float]:
+        """
+        Generate embeddings for a given text using Pinecone Inference API.
+
+        Parameters:
+            text: The text to generate embeddings for.
+
+        Returns:
+            List[float]: The embeddings for the text.
+        """
+        response = self.pc.inference.embed(
+            model=INFERENCE_MODEL,
+            inputs=[text],
+            parameters={"input_type": "passage", "truncate": "END"},
+        )
+        # if the response is empty, raise an error
+        if not response.data:
+            raise ValueError(f"Failed to generate embeddings for text: {text}")
+        return response.data[0].values
+
+    def generate_record_id(self) -> str:
+        """
+        Generate a document ID using a millisecond timestamp.
+        Todo:
+        - Implement a more robust ID generation method.
+        - Store a reference to the record in a source system.
+
+        """
+        return str(int(time.time() * 1000))
+
     def upsert_records(
         self, records: List[Dict[str, Any]], namespace: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Upsert records with text that will be automatically embedded
+        Upsert records into the Pinecone index.
+
+        Parameters:
+            records: List of records to upsert.
+            namespace: Optional namespace to upsert into.
+
+        Returns:
+            Dict[str, Any]: The response from Pinecone.
         """
         try:
-            # Transform records to match SDK format
-            vectors = [
-                {
-                    "id": record["_id"],
-                    "values": record.get("values", []),
-                    "metadata": record.get("metadata", {}),
-                }
-                for record in records
-            ]
+            vectors = []
+            for record in records:
+                if "text" in record:
+                    vector_values = self.generate_embeddings(record["text"])
+
+                    # Claude can generate a document id so use it if it exists
+                    record_id = record.get("_id", self.generate_record_id())
+
+                    metadata = record.get("metadata", {})
+                    metadata["text"] = record["text"]
+
+                    vectors.append((record_id, vector_values, metadata))
 
             return self.index.upsert(vectors=vectors, namespace=namespace)
+
         except Exception as e:
             logger.error(f"Error upserting records: {e}")
             raise
@@ -83,14 +136,30 @@ class PineconeClient:
         filter: Optional[Dict] = None,
         include_metadata: bool = True,
     ) -> Dict[str, Any]:
-        """Search records using integrated inference"""
+        """
+        Search records using integrated inference.
+
+        Parameters:
+            query: The query to search for.
+            top_k: The number of results to return.
+            namespace: Optional namespace to search in.
+            filter: Optional filter to apply to the search.
+            include_metadata: Whether to include metadata in the search results.
+
+        Returns:
+            Dict[str, Any]: The search results from Pinecone.
+        """
         try:
-            inputs = {"text": query} if isinstance(query, str) else {"values": query}
+            # If query is text, use our custom function to get embeddings
+            if isinstance(query, str):
+                vector = self.generate_embeddings(query)
+            else:
+                vector = query
+
             return self.index.query(
-                **inputs,
+                vector=vector,
                 top_k=top_k,
                 namespace=namespace,
-                include_values=True,
                 include_metadata=include_metadata,
                 filter=filter,
             )
@@ -104,7 +173,7 @@ class PineconeClient:
         """
         Delete records by ID
 
-        Args:
+        Parameters:
             ids: List of record IDs to delete
             namespace: Optional namespace to delete from
         """
@@ -120,7 +189,7 @@ class PineconeClient:
         """
         Fetch specific records by ID
 
-        Args:
+        Parameters:
             ids: List of record IDs to fetch
             namespace: Optional namespace to fetch from
         """
@@ -137,7 +206,12 @@ class PineconeClient:
         namespace: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        List records in the index using pagination
+        List records in the index using pagination.
+
+        Parameters:
+            prefix: Optional prefix to filter records by.
+            limit: The number of records to return per page.
+            namespace: Optional namespace to list records from.
         """
         try:
             # Using list_paginated for single-page results
@@ -164,7 +238,14 @@ class PineconeClient:
         limit: int = 100,
         namespace: Optional[str] = None,
     ) -> Iterator[List[str]]:
-        """Iterate through all records using the generator-based list method"""
+        """
+        Iterate through all records using the generator-based list method.
+
+        Parameters:
+            prefix: Optional prefix to filter records by.
+            limit: The number of records to return per page.
+            namespace: Optional namespace to list records from.
+        """
         try:
             for ids in self.index.list(prefix=prefix, limit=limit, namespace=namespace):
                 yield ids
@@ -173,7 +254,12 @@ class PineconeClient:
             raise
 
     def get_index_stats(self) -> Dict[str, Any]:
-        """Get statistics about the index"""
+        """
+        Get statistics about the index.
+
+        Returns:
+            Dict[str, Any]: The statistics about the index.
+        """
         try:
             return self.index.describe_index_stats()
         except Exception as e:

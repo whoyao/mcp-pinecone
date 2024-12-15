@@ -61,6 +61,10 @@ __Published Servers Configuration__
   "mcp-pinecone": {
     "command": "uvx",
     "args": [
+      "--index-name",
+      "{your-index-name}",
+      "--api-key",
+      "{your-secret-api-key}",
       "mcp-pinecone"
     ]
   }

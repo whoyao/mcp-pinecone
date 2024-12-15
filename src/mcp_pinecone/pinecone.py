@@ -1,5 +1,5 @@
 from pinecone import Pinecone, ServerlessSpec
-from typing import Iterator, List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union
 from .constants import (
     INFERENCE_DIMENSION,
     PINECONE_INDEX_NAME,
@@ -8,7 +8,6 @@ from .constants import (
 )
 from dotenv import load_dotenv
 import logging
-import time
 
 load_dotenv()
 
@@ -53,7 +52,6 @@ class PineconeClient:
         Create a serverless index with integrated inference.
         """
         try:
-            logger.info(f"Creating index {PINECONE_INDEX_NAME}")
             return self.pc.create_index(
                 name=PINECONE_INDEX_NAME,
                 dimension=INFERENCE_DIMENSION,
@@ -209,9 +207,6 @@ class PineconeClient:
                 prefix=prefix, limit=limit, namespace=namespace
             )
 
-            # Add debug logging
-            logger.debug(f"Pinecone list_paginated response: {response}")
-
             # Check if response is None
             if response is None:
                 logger.error("Received None response from Pinecone list_paginated")
@@ -237,38 +232,3 @@ class PineconeClient:
             logger.error(f"Error listing records: {e}")
             # Return empty result instead of raising
             return {"vectors": [], "namespace": namespace, "pagination_token": None}
-
-    # Optional: Add a method for iterating through all pages
-    def iterate_records(
-        self,
-        prefix: Optional[str] = None,
-        limit: int = 100,
-        namespace: Optional[str] = None,
-    ) -> Iterator[List[str]]:
-        """
-        Iterate through all records using the generator-based list method.
-
-        Parameters:
-            prefix: Optional prefix to filter records by.
-            limit: The number of records to return per page.
-            namespace: Optional namespace to list records from.
-        """
-        try:
-            for ids in self.index.list(prefix=prefix, limit=limit, namespace=namespace):
-                yield ids
-        except Exception as e:
-            logger.error(f"Error iterating records: {e}")
-            raise
-
-    def get_index_stats(self) -> Dict[str, Any]:
-        """
-        Get statistics about the index.
-
-        Returns:
-            Dict[str, Any]: The statistics about the index.
-        """
-        try:
-            return self.index.describe_index_stats()
-        except Exception as e:
-            logger.error(f"Error getting index stats: {e}")
-            raise

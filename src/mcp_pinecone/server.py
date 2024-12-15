@@ -1,13 +1,12 @@
 import logging
-import asyncio
 from typing import Union, Sequence
 from mcp.server.models import InitializationOptions
 import mcp.types as types
 from mcp.server import NotificationOptions, Server
 from pydantic import AnyUrl
 import mcp.server.stdio
-from jsonschema import validate, ValidationError
 from .pinecone import PineconeClient
+from .utils import MCPToolError
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("pinecone-mcp")
@@ -19,18 +18,28 @@ server = Server("pinecone-mcp")
 @server.list_resources()
 async def handle_list_resources() -> list[types.Resource]:
     try:
-        records = await pinecone_client.list_records()
-        return [
-            types.Resource(
-                uri=f"pinecone://vectors/{record['id']}",
-                name=record.get("metadata", {}).get("title", f"Vector {record['id']}"),
-                description=record.get("metadata", {}).get("text", "")[:100] + "...",
-                metadata=record.get("metadata", {}),
-                mimeType=record.get("metadata", {}).get("content_type", "text/plain"),
-                template=record.get("metadata", {}).get("template_id"),
+        if pinecone_client is None:
+            logger.error("Pinecone client is not initialized")
+            return []
+        records = pinecone_client.list_records()
+
+        resources = []
+        for record in records.get("vectors", []):
+            # If metadata is None, use empty dict
+            metadata = record.get("metadata") or {}
+            description = (
+                metadata.get("text", "")[:100] + "..." if metadata.get("text") else ""
             )
-            for record in records.get("vectors", [])
-        ]
+            resources.append(
+                types.Resource(
+                    uri=f"pinecone://vectors/{record['id']}",
+                    name=metadata.get("title", f"Vector {record['id']}"),
+                    description=description,
+                    metadata=metadata,
+                    mimeType=metadata.get("content_type", "text/plain"),
+                )
+            )
+        return resources
     except Exception as e:
         logger.error(f"Error listing resources: {e}")
         return []
@@ -43,7 +52,7 @@ async def handle_read_resource(uri: AnyUrl) -> Union[str, bytes]:
 
     try:
         vector_id = str(uri).split("/")[-1]
-        record = await pinecone_client.fetch_records([vector_id])
+        record = pinecone_client.fetch_records([vector_id])
 
         if not record or "records" not in record or not record["records"]:
             raise ValueError(f"Vector not found: {vector_id}")
@@ -87,48 +96,14 @@ def format_binary_content(vector_data: dict) -> bytes:
     return content
 
 
-@server.list_resource_templates()
-async def handle_list_resource_templates() -> list[types.ResourceTemplate]:
-    return [
-        types.ResourceTemplate(
-            id="knowledge-note",
-            name="Knowledge Note",
-            uriTemplate="pinecone://vectors/{id}",
-            schema={
-                "type": "object",
-                "properties": {
-                    "text": {"type": "string"},
-                    "metadata": {
-                        "type": "object",
-                        "properties": {
-                            "title": {"type": "string"},
-                            "tags": {"type": "array", "items": {"type": "string"}},
-                            "created": {"type": "string", "format": "date-time"},
-                            "updated": {"type": "string", "format": "date-time"},
-                            "references": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                            },
-                            "category": {"type": "string"},
-                            "summary": {"type": "string"},
-                        },
-                        "required": ["title", "created"],
-                    },
-                },
-                "required": ["text", "metadata"],
-            },
-        )
-    ]
-
-
 @server.list_tools()
 async def handle_list_tools() -> list[types.Tool]:
     return [
         types.Tool(
             name="semantic-search",
-            description="Search knowledge base",
+            description="Search pineconeknowledge base",
             category="search",
-            input_schema={
+            inputSchema={
                 "type": "object",
                 "properties": {
                     "query": {"type": "string"},
@@ -147,29 +122,27 @@ async def handle_list_tools() -> list[types.Tool]:
             },
         ),
         types.Tool(
-            name="find-similar",
-            description="Find notes similar to a given note",
-            category="search",
-            input_schema={
+            name="read-document",
+            description="Read a document from the pinecone knowledge base",
+            category="read",
+            inputSchema={
                 "type": "object",
                 "properties": {
-                    "note_id": {"type": "string"},
-                    "top_k": {"type": "integer", "default": 5},
+                    "document_id": {"type": "string"},
                 },
-                "required": ["note_id"],
+                "required": ["document_id"],
             },
         ),
         types.Tool(
             name="upsert-document",
-            description="Add or update a document",
+            description="Add or update content in the pineconeknowledge base",
             category="mutation",
-            input_schema={
+            inputSchema={
                 "type": "object",
                 "properties": {
                     "id": {"type": "string"},
                     "text": {"type": "string"},
                     "metadata": {"type": "object"},
-                    "template_id": {"type": "string"},
                 },
                 "required": ["id", "text"],
             },
@@ -185,30 +158,21 @@ async def handle_call_tool(
         if name == "semantic-search":
             query = arguments.get("query")
             top_k = arguments.get("top_k", 10)
-            rerank = arguments.get("rerank", False)
             filters = arguments.get("filters")
 
-            ctx = server.request_context
-            await ctx.report_progress(0.2, "Searching...")
-
-            results = await asyncio.wait_for(
-                pinecone_client.search_records(
-                    query=query,
-                    top_k=top_k,
-                    rerank={"enabled": rerank} if rerank else None,
-                    filter=filters,
-                ),
-                timeout=30.0,
+            results = pinecone_client.search_records(
+                query=query, top_k=top_k, filter=filters, include_metadata=True
             )
-
-            await ctx.report_progress(0.8, "Processing results...")
 
             matches = results.get("matches", [])
-            formatted_text = f"Found {len(matches)} matches:\n" + "\n".join(
-                f"- {match.get('metadata', {}).get('title', f'Document {match['id']}')} "
-                f"(Score: {match['score']:.2f})"
-                for match in matches
-            )
+
+            # Format results with rich context
+            formatted_text = "Retrieved Contexts:\n\n"
+            for i, match in enumerate(matches, 1):
+                metadata = match.get("metadata", {})
+                formatted_text += f"[Document {i} - Similarity: {match['score']:.3f}]\n"
+                formatted_text += f"{metadata.get('text', '').strip()}\n"
+                formatted_text += "-" * 40 + "\n\n"
 
             return [types.TextContent(type="text", text=formatted_text)]
 
@@ -216,38 +180,15 @@ async def handle_call_tool(
             doc_id = arguments.get("id")
             text = arguments.get("text")
             metadata = arguments.get("metadata", {})
-            template_id = arguments.get("template_id")
 
-            ctx = server.request_context
-            await ctx.report_progress(0.3, "Validating document...")
-
-            if template_id:
-                templates = await handle_list_resource_templates()
-                template = next((t for t in templates if t.id == template_id), None)
-                if not template:
-                    raise types.ToolError(f"Unknown template: {template_id}")
-
-                document_data = {"text": text, "metadata": metadata}
-                try:
-                    validate(instance=document_data, schema=template.schema)
-                except ValidationError as e:
-                    raise types.ToolError(f"Invalid document format: {str(e)}")
-
-            await ctx.report_progress(0.6, "Upserting document...")
-
+            # Use text directly - Pinecone will generate the embedding
             record = {
-                "_id": doc_id,
-                "text": text,
-                "metadata": {**metadata, "template_id": template_id}
-                if template_id
-                else metadata,
+                "id": doc_id,
+                "text": text,  # Pinecone will generate embedding from this
+                "metadata": {**metadata},
             }
 
-            await asyncio.wait_for(
-                pinecone_client.upsert_records([record]), timeout=30.0
-            )
-
-            await ctx.report_progress(1.0, "Document upserted")
+            pinecone_client.upsert_records([record])
 
             return [
                 types.TextContent(
@@ -255,14 +196,11 @@ async def handle_call_tool(
                 )
             ]
         else:
-            raise types.ToolError(f"Unknown tool: {name}")
+            raise MCPToolError(types.METHOD_NOT_FOUND, f"Unknown tool: {name}")
 
-    except asyncio.TimeoutError:
-        raise types.ToolError("Operation timed out")
     except Exception as e:
-        if isinstance(e, types.ToolError):
-            raise e
-        raise types.ToolError(f"Tool execution failed: {str(e)}")
+        logger.error(f"Error in upsert: {str(e)}", exc_info=True)
+        raise
 
 
 @server.get_prompt()
@@ -274,39 +212,55 @@ async def handle_get_prompt(
         if not query:
             raise ValueError("Query required")
 
-        ctx = server.request_context
-        await ctx.report_progress(0.2, "Searching knowledge base...")
-
-        # Search knowledge base
+        # Get semantic search results
         search_results = await handle_call_tool(
-            "semantic-search", {"query": query, "top_k": 5}
+            "semantic-search", {"query": query, "top_k": 3}
         )
 
-        # Get full content of relevant notes
-        notes = []
-        for match in search_results[0].text.split("\n")[
-            1:
-        ]:  # Skip first line with count
-            note_id = match.split("Document ")[1].split(" ")[0]
-            content = await handle_read_resource(f"pinecone://vectors/{note_id}")
-            notes.append(content)
+        # The semantic search already includes the full text in the metadata
+        # It's formatted in search_results[0].text which contains:
+        # - Document contents
+        # - Similarity scores
+        # - Separators between documents
 
-        prompt = f"""Context from knowledge base:
-{'-' * 40}
-{'\n'.join(notes)}
-{'-' * 40}
+        prompt = f"""Human: You are an intelligent assistant tasked with answering questions based on the provided context. 
+Your responses should be:
+1. Accurate and directly based on the provided context
+2. Well-structured and clear
+3. Include relevant quotes when appropriate
+4. Acknowledge any limitations in the available information
+
+Retrieved Context:
+{search_results[0].text}
 
 Question: {query}
 
-Based on the above context:
-1. Directly answer the question
-2. Cite relevant information from the knowledge base
-3. Note any connections between referenced documents
-4. Suggest related topics to explore further"""
+Please provide a comprehensive response that:
+1. Directly answers the question
+2. Cites specific evidence from the context
+3. Notes any relevant connections between different parts of the context
+4. Acknowledges any areas where the context may be incomplete"""
 
         return types.GetPromptResult(prompt=prompt)
 
     raise ValueError(f"Unknown prompt: {name}")
+
+
+@server.list_prompts()
+async def handle_list_prompts() -> list[types.Prompt]:
+    return [
+        types.Prompt(
+            name="brain-query",
+            description="Search knowledge base and construct an answer based on relevant pinecone documents",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                },
+                "required": ["query"],
+            },
+        )
+    ]
 
 
 async def main():

@@ -85,16 +85,6 @@ class PineconeClient:
             raise ValueError(f"Failed to generate embeddings for text: {text}")
         return response.data[0].values
 
-    def generate_record_id(self) -> str:
-        """
-        Generate a document ID using a millisecond timestamp.
-        Todo:
-        - Implement a more robust ID generation method.
-        - Store a reference to the record in a source system.
-
-        """
-        return str(int(time.time() * 1000))
-
     def upsert_records(
         self, records: List[Dict[str, Any]], namespace: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -115,7 +105,7 @@ class PineconeClient:
                     vector_values = self.generate_embeddings(record["text"])
 
                     # Claude can generate a document id so use it if it exists
-                    record_id = record.get("_id", self.generate_record_id())
+                    record_id = record.get("id")
 
                     metadata = record.get("metadata", {})
                     metadata["text"] = record["text"]
@@ -218,18 +208,35 @@ class PineconeClient:
             response = self.index.list_paginated(
                 prefix=prefix, limit=limit, namespace=namespace
             )
+
+            # Add debug logging
+            logger.debug(f"Pinecone list_paginated response: {response}")
+
+            # Check if response is None
+            if response is None:
+                logger.error("Received None response from Pinecone list_paginated")
+                return {"vectors": [], "namespace": namespace, "pagination_token": None}
+
+            # Handle the case where vectors might be None
+            vectors = response.vectors if hasattr(response, "vectors") else []
+
             return {
                 "vectors": [
-                    {"id": v.id, "metadata": v.metadata} for v in response.vectors
+                    {
+                        "id": getattr(v, "id", None),
+                        "metadata": getattr(v, "metadata", {}),
+                    }
+                    for v in vectors
                 ],
-                "namespace": response.namespace,
-                "pagination_token": response.pagination.next
-                if response.pagination
+                "namespace": getattr(response, "namespace", namespace),
+                "pagination_token": getattr(response.pagination, "next", None)
+                if hasattr(response, "pagination")
                 else None,
             }
         except Exception as e:
             logger.error(f"Error listing records: {e}")
-            raise
+            # Return empty result instead of raising
+            return {"vectors": [], "namespace": namespace, "pagination_token": None}
 
     # Optional: Add a method for iterating through all pages
     def iterate_records(

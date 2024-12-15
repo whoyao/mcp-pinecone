@@ -135,7 +135,7 @@ async def handle_list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="upsert-document",
-            description="Add or update content in the pineconeknowledge base",
+            description="Add or update content in the pinecone knowledge base",
             category="mutation",
             inputSchema={
                 "type": "object",

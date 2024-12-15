@@ -24,8 +24,8 @@ release:
 	git push origin v$$VERSION
 	@echo "\nRelease v$$VERSION created!"
 	@echo "Users can install with:"
-	@echo "  uvx install github:yourusername/mcp-pinecone@v$$VERSION"
-	@echo "  uv pip install git+https://github.com/yourusername/mcp-pinecone.git@v$$VERSION"
+	@echo "  uvx install github:sirmews/mcp-pinecone@v$$VERSION"
+	@echo "  uv pip install git+https://github.com/sirmews/mcp-pinecone.git@v$$VERSION"
 
 ## inspect-local-server: Inspect the local MCP server
 inspect-local-server:

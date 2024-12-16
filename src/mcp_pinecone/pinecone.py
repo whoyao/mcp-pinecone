@@ -1,4 +1,4 @@
-from pinecone import Pinecone, ServerlessSpec
+from pinecone import Pinecone, ServerlessSpec, FetchResponse
 from typing import List, Dict, Any, Optional, Union
 from .constants import (
     INFERENCE_DIMENSION,
@@ -173,13 +173,19 @@ class PineconeClient:
 
     def fetch_records(
         self, ids: List[str], namespace: Optional[str] = None
-    ) -> Dict[str, Any]:
+    ) -> FetchResponse:
         """
         Fetch specific records by ID
 
         Parameters:
             ids: List of record IDs to fetch
             namespace: Optional namespace to fetch from
+
+        Returns:
+            FetchResponse: The response from Pinecone.
+
+        Raises:
+            Exception: If there is an error fetching the records.
         """
         try:
             return self.index.fetch(ids=ids, namespace=namespace)

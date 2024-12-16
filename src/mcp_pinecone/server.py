@@ -170,11 +170,40 @@ async def handle_call_tool(
             formatted_text = "Retrieved Contexts:\n\n"
             for i, match in enumerate(matches, 1):
                 metadata = match.get("metadata", {})
-                formatted_text += f"[Document {i} - Similarity: {match['score']:.3f}]\n"
+                formatted_text += f"[Result {i} - Similarity: {match['score']:.3f}]\n"
+                formatted_text += f"Document ID: {match['id']}\n"
                 formatted_text += f"{metadata.get('text', '').strip()}\n"
                 formatted_text += "-" * 40 + "\n\n"
 
             return [types.TextContent(type="text", text=formatted_text)]
+
+        elif name == "read-document":
+            document_id = arguments.get("document_id")
+            if not document_id:
+                raise ValueError("document_id is required")
+
+            # Fetch the record using your existing fetch_records method
+            record = pinecone_client.fetch_records([document_id])
+
+            # Get the vector data for this document
+            vector = record.vectors.get(document_id)
+            if not vector:
+                raise ValueError(f"Document {document_id} not found")
+
+            # Get metadata from the vector
+            metadata = vector.metadata if hasattr(vector, "metadata") else {}
+
+            # Format the document content
+            formatted_content = []
+            formatted_content.append(f"Document ID: {document_id}")
+            formatted_content.append("")  # Empty line for spacing
+
+            if metadata:
+                formatted_content.append("Metadata:")
+                for key, value in metadata.items():
+                    formatted_content.append(f"{key}: {value}")
+
+            return [types.TextContent(type="text", text="\n".join(formatted_content))]
 
         elif name == "upsert-document":
             doc_id = arguments.get("id")

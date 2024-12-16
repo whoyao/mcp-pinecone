@@ -1,3 +1,5 @@
+include .env
+
 # Default make command
 all: help
 
@@ -11,7 +13,7 @@ build:
 
 ## publish: Publish the package to PyPI
 publish:
-	uv publish
+	uv publish --username __token__ --password ${PYPI_TOKEN}
 
 ## release: Create and push a new release tag
 release:

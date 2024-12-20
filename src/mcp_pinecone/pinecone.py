@@ -19,8 +19,8 @@ logger = logging.getLogger(__name__)
 # Pydantic moddel for a Pinecone record
 class PineconeRecord(BaseModel):
     id: str
-    text: List[float]
-    raw_text: str
+    embedding: List[float]
+    text: str
     metadata: Dict[str, Any]
 
 
@@ -111,18 +111,18 @@ class PineconeClient:
         try:
             vectors = []
             for record in records:
-                if "text" in record:
-                    vector_values = record.text
-                    raw_text = record.raw_text
+                # Don't continue if there's no vector values
+                if not record.embedding:
+                    continue
 
-                    logger.info(f"Raw text: {vector_values}")
+                vector_values = record.embedding
+                raw_text = record.text
+                record_id = record.id
+                metadata = record.metadata
 
-                    # Claude can generate a document id so use it if it exists
-                    record_id = record.get("id") or record.id
-
-                    metadata = record.metadata
-                    metadata["text"] = raw_text
-                    vectors.append((record_id, vector_values, metadata))
+                # Add raw text to metadata
+                metadata["text"] = raw_text
+                vectors.append((record_id, vector_values, metadata))
 
             return self.index.upsert(vectors=vectors, namespace=namespace)
 

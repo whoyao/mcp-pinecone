@@ -234,6 +234,7 @@ async def handle_call_tool(
             chunks = chunker.chunk_document(doc_id, text, metadata)
             # count chunks
             logger.info(f"Chunk count: {len(chunks)}")
+            records = []
             for chunk in chunks:
                 # Create an embedding for each chunk
                 embedding = pinecone_client.generate_embeddings(chunk.content)
@@ -241,12 +242,13 @@ async def handle_call_tool(
                 # Use text directly - Pinecone will generate the embedding
                 record = PineconeRecord(
                     id=chunk.id,
-                    text=embedding,
-                    raw_text=chunk.content,
+                    embedding=embedding,
+                    text=chunk.content,
                     metadata={**metadata},
                 )
+                records.append(record)
 
-                pinecone_client.upsert_records([record], namespace=namespace)
+            pinecone_client.upsert_records(records, namespace=namespace)
 
             return [
                 types.TextContent(

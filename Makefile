@@ -11,6 +11,10 @@ reinstall-deps:
 build:
 	uv build
 
+## lock-upgrade: Lock dependencies to the latest version
+lock-upgrade:
+	uv lock --upgrade
+
 ## publish: Publish the package to PyPI
 publish:
 	uv publish --username __token__ --password ${PYPI_TOKEN}

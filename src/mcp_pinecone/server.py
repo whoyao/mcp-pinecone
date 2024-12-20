@@ -5,8 +5,9 @@ import mcp.types as types
 from mcp.server import NotificationOptions, Server
 from pydantic import AnyUrl
 import mcp.server.stdio
-from .pinecone import PineconeClient
+from .pinecone import PineconeClient, PineconeRecord
 from .utils import MCPToolError
+from .chunking import MarkdownChunker
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("pinecone-mcp")
@@ -229,14 +230,23 @@ async def handle_call_tool(
             metadata = arguments.get("metadata", {})
             namespace = arguments.get("namespace")
 
-            # Use text directly - Pinecone will generate the embedding
-            record = {
-                "id": doc_id,
-                "text": text,  # Pinecone will generate embedding from this
-                "metadata": {**metadata},
-            }
+            chunker = MarkdownChunker()
+            chunks = chunker.chunk_document(doc_id, text, metadata)
+            # count chunks
+            logger.info(f"Chunk count: {len(chunks)}")
+            for chunk in chunks:
+                # Create an embedding for each chunk
+                embedding = pinecone_client.generate_embeddings(chunk.content)
 
-            pinecone_client.upsert_records([record], namespace=namespace)
+                # Use text directly - Pinecone will generate the embedding
+                record = PineconeRecord(
+                    id=chunk.id,
+                    text=embedding,
+                    raw_text=chunk.content,
+                    metadata={**metadata},
+                )
+
+                pinecone_client.upsert_records([record], namespace=namespace)
 
             return [
                 types.TextContent(

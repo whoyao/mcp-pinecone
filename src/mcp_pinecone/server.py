@@ -108,6 +108,10 @@ async def handle_list_tools() -> list[types.Tool]:
                 "properties": {
                     "query": {"type": "string"},
                     "top_k": {"type": "integer", "default": 10},
+                    "namespace": {
+                        "type": "string",
+                        "description": "Optional namespace to search in",
+                    },
                     "category": {"type": "string"},
                     "tags": {"type": "array", "items": {"type": "string"}},
                     "date_range": {
@@ -129,6 +133,10 @@ async def handle_list_tools() -> list[types.Tool]:
                 "type": "object",
                 "properties": {
                     "document_id": {"type": "string"},
+                    "namespace": {
+                        "type": "string",
+                        "description": "Optional namespace to read from",
+                    },
                 },
                 "required": ["document_id"],
             },
@@ -143,6 +151,10 @@ async def handle_list_tools() -> list[types.Tool]:
                     "id": {"type": "string"},
                     "text": {"type": "string"},
                     "metadata": {"type": "object"},
+                    "namespace": {
+                        "type": "string",
+                        "description": "Optional namespace to store the document in",
+                    },
                 },
                 "required": ["id", "text"],
             },
@@ -159,9 +171,14 @@ async def handle_call_tool(
             query = arguments.get("query")
             top_k = arguments.get("top_k", 10)
             filters = arguments.get("filters")
+            namespace = arguments.get("namespace")
 
             results = pinecone_client.search_records(
-                query=query, top_k=top_k, filter=filters, include_metadata=True
+                query=query,
+                top_k=top_k,
+                filter=filters,
+                include_metadata=True,
+                namespace=namespace,
             )
 
             matches = results.get("matches", [])
@@ -179,11 +196,12 @@ async def handle_call_tool(
 
         elif name == "read-document":
             document_id = arguments.get("document_id")
+            namespace = arguments.get("namespace")
             if not document_id:
                 raise ValueError("document_id is required")
 
             # Fetch the record using your existing fetch_records method
-            record = pinecone_client.fetch_records([document_id])
+            record = pinecone_client.fetch_records([document_id], namespace=namespace)
 
             # Get the vector data for this document
             vector = record.vectors.get(document_id)
@@ -209,6 +227,7 @@ async def handle_call_tool(
             doc_id = arguments.get("id")
             text = arguments.get("text")
             metadata = arguments.get("metadata", {})
+            namespace = arguments.get("namespace")
 
             # Use text directly - Pinecone will generate the embedding
             record = {
@@ -217,7 +236,7 @@ async def handle_call_tool(
                 "metadata": {**metadata},
             }
 
-            pinecone_client.upsert_records([record])
+            pinecone_client.upsert_records([record], namespace=namespace)
 
             return [
                 types.TextContent(

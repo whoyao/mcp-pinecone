@@ -1,5 +1,7 @@
 from pinecone import Pinecone, ServerlessSpec, FetchResponse
 from typing import List, Dict, Any, Optional, Union
+
+from pydantic import BaseModel
 from .constants import (
     INFERENCE_DIMENSION,
     PINECONE_INDEX_NAME,
@@ -12,6 +14,14 @@ import logging
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+
+# Pydantic moddel for a Pinecone record
+class PineconeRecord(BaseModel):
+    id: str
+    embedding: List[float]
+    text: str
+    metadata: Dict[str, Any]
 
 
 class PineconeClient:
@@ -84,7 +94,9 @@ class PineconeClient:
         return response.data[0].values
 
     def upsert_records(
-        self, records: List[Dict[str, Any]], namespace: Optional[str] = None
+        self,
+        records: List[PineconeRecord],
+        namespace: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Upsert records into the Pinecone index.
@@ -99,16 +111,18 @@ class PineconeClient:
         try:
             vectors = []
             for record in records:
-                if "text" in record:
-                    vector_values = self.generate_embeddings(record["text"])
+                # Don't continue if there's no vector values
+                if not record.embedding:
+                    continue
 
-                    # Claude can generate a document id so use it if it exists
-                    record_id = record.get("id")
+                vector_values = record.embedding
+                raw_text = record.text
+                record_id = record.id
+                metadata = record.metadata
 
-                    metadata = record.get("metadata", {})
-                    metadata["text"] = record["text"]
-
-                    vectors.append((record_id, vector_values, metadata))
+                # Add raw text to metadata
+                metadata["text"] = raw_text
+                vectors.append((record_id, vector_values, metadata))
 
             return self.index.upsert(vectors=vectors, namespace=namespace)
 

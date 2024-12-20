@@ -82,7 +82,7 @@ The server implements the ability to read and write to a Pinecone index.
 - `read-document`: Read a document from the Pinecone index.
 - `upsert-document`: Upsert a document into the Pinecone index.
 
-Note: embeddings are generated via Pinecone's inference API.
+Note: embeddings are generated via Pinecone's inference API and chunking is done with a rudimentary markdown splitter (via `langchain`).
 ## Quickstart
 
 ### Install the server
@@ -140,6 +140,14 @@ __Published Servers Configuration__
   }
 }
 ```
+
+#### Sign up to Pinecone
+
+You can sign up for a Pinecone account [here](https://www.pinecone.io/).
+
+#### Get an API key
+
+Create a new index in Pinecone, replacing `{your-index-name}` and get an API key from the Pinecone dashboard, replacing `{your-secret-api-key}` in the config.
 
 ## Development
 

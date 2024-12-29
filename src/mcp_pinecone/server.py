@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import Union, Sequence
 from mcp.server.models import InitializationOptions
@@ -7,7 +8,7 @@ from pydantic import AnyUrl
 import mcp.server.stdio
 from .pinecone import PineconeClient, PineconeRecord
 from .utils import MCPToolError
-from .chunking import MarkdownChunker
+from .chunking import MarkdownChunker, ChunkingResponse
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("pinecone-mcp")
@@ -102,7 +103,7 @@ async def handle_list_tools() -> list[types.Tool]:
     return [
         types.Tool(
             name="semantic-search",
-            description="Search pineconeknowledge base",
+            description="Search pinecone knowledge base",
             category="search",
             inputSchema={
                 "type": "object",
@@ -143,21 +144,84 @@ async def handle_list_tools() -> list[types.Tool]:
             },
         ),
         types.Tool(
-            name="upsert-document",
-            description="Add or update content in the pinecone knowledge base",
+            name="chunk-document",
+            description="First step in document storage process. Chunks a document into smaller segments for optimal storage and retrieval. Must be called before upsert-document.",
             category="mutation",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "id": {"type": "string"},
+                    "document_id": {"type": "string"},
                     "text": {"type": "string"},
-                    "metadata": {"type": "object"},
+                },
+                "required": ["document_id", "text"],
+            },
+        ),
+        types.Tool(
+            name="embed-document",
+            description="Second step in document storage process. Embeds a document into the knowledge base as a vector. Must be used after chunk-document. Expects chunks from the chunk-document response.",
+            category="mutation",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "chunks": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string"},
+                                "content": {"type": "string"},
+                                "metadata": {"type": "object"},
+                            },
+                            "required": ["id", "content"],
+                        },
+                    }
+                },
+                "required": ["chunks"],
+            },
+        ),
+        types.Tool(
+            name="upsert-document",
+            description="Third step in document storage process. Upserts a document into the knowledge base. Must be used after chunk-document and embed-document. Expects embeddings from the embed-document response.",
+            category="mutation",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "embedded_chunks": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string"},
+                                "embedding": {"type": "array"},
+                                "text": {"type": "string"},
+                                "metadata": {"type": "object"},
+                            },
+                            "required": ["id", "embedding", "text", "metadata"],
+                        },
+                    },
                     "namespace": {
                         "type": "string",
                         "description": "Optional namespace to store the document in",
                     },
                 },
-                "required": ["id", "text"],
+                "required": ["embedded_chunks"],
+            },
+        ),
+        types.Tool(
+            name="process-document",
+            description="Process a document by chunking, embedding, and upserting it into the knowledge base",
+            category="mutation",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "document_id": {"type": "string"},
+                    "text": {"type": "string"},
+                    "namespace": {
+                        "type": "string",
+                        "description": "Optional namespace to store the document in",
+                    },
+                },
+                "required": ["document_id", "text"],
             },
         ),
     ]
@@ -224,36 +288,97 @@ async def handle_call_tool(
 
             return [types.TextContent(type="text", text="\n".join(formatted_content))]
 
-        elif name == "upsert-document":
-            doc_id = arguments.get("id")
+        if name == "process-document":  # New combined tool
+            document_id = arguments.get("document_id")
             text = arguments.get("text")
-            metadata = arguments.get("metadata", {})
             namespace = arguments.get("namespace")
 
-            chunker = MarkdownChunker()
-            chunks = chunker.chunk_document(doc_id, text, metadata)
-            # count chunks
-            logger.info(f"Chunk count: {len(chunks)}")
-            records = []
-            for chunk in chunks:
-                # Create an embedding for each chunk
-                embedding = pinecone_client.generate_embeddings(chunk.content)
+            # Chain the tools together internally
+            chunks_result = await handle_call_tool(
+                "chunk-document", {"document_id": document_id, "text": text}
+            )
+            chunks_data = json.loads(chunks_result[0].text)
 
-                # Use text directly - Pinecone will generate the embedding
-                record = PineconeRecord(
-                    id=chunk.id,
-                    embedding=embedding,
-                    text=chunk.content,
-                    metadata={**metadata},
-                )
-                records.append(record)
+            embed_result = await handle_call_tool(
+                "embed-document", {"chunks": chunks_data["chunks"]}
+            )
+            embed_data = json.loads(embed_result[0].text)
 
-            pinecone_client.upsert_records(records, namespace=namespace)
+            upsert_result = await handle_call_tool(
+                "upsert-document",
+                {
+                    "embedded_chunks": embed_data["embedded_chunks"],
+                    "namespace": namespace,
+                },
+            )
 
             return [
                 types.TextContent(
-                    type="text", text=f"Successfully upserted document: {doc_id}"
+                    type="text",
+                    text=json.dumps(upsert_result),
                 )
+            ]
+
+        elif name == "chunk-document":
+            document_id = arguments.get("document_id")
+            text = arguments.get("text")
+            chunk_type = arguments.get("chunk_type", "markdown")
+
+            chunker = MarkdownChunker()
+            chunks = chunker.chunk_document(document_id=document_id, content=text)
+
+            response = ChunkingResponse(
+                chunks=chunks,
+                total_chunks=len(chunks),
+                document_id=document_id,
+                chunk_type=chunk_type,
+            )
+
+            # Return the chunks as a list of text content
+            return [types.TextContent(type="text", text=json.dumps(response.to_dict()))]
+
+        elif name == "embed-document":
+            chunks = arguments.get("chunks", [])
+
+            embedded_chunks = []
+            for chunk in chunks:
+                content = chunk.get("content")
+                chunk_id = chunk.get("id")
+                metadata = chunk.get("metadata", {})
+
+                if not content or not chunk_id:
+                    logger.warning(f"Skipping invalid chunk: {chunk}")
+                    continue
+
+                embedding = pinecone_client.generate_embeddings(content)
+                record = PineconeRecord(
+                    id=chunk_id,
+                    embedding=embedding,
+                    text=content,
+                    metadata=metadata,
+                )
+                embedded_chunks.append(record.to_dict())
+
+            return [
+                types.TextContent(
+                    type="text",
+                    text=json.dumps(
+                        {
+                            "embedded_chunks": embedded_chunks,
+                            "total_embedded": len(embedded_chunks),
+                        }
+                    ),
+                )
+            ]
+
+        elif name == "upsert-document":
+            namespace = arguments.get("namespace")
+            embedded_chunks = arguments.get("embedded_chunks", [])
+
+            pinecone_client.upsert_records(embedded_chunks, namespace=namespace)
+
+            return [
+                types.TextContent(type="text", text="Successfully upserted document")
             ]
         else:
             raise MCPToolError(types.METHOD_NOT_FOUND, f"Unknown tool: {name}")

@@ -1,10 +1,9 @@
 from typing import List, Dict, Any, Optional
-from dataclasses import dataclass
 from langchain.text_splitter import MarkdownHeaderTextSplitter
+from pydantic import BaseModel
 
 
-@dataclass
-class Chunk:
+class Chunk(BaseModel):
     """
     Represents a document chunk with metadata
     """
@@ -12,6 +11,38 @@ class Chunk:
     id: str
     content: str
     metadata: Dict[str, Any]
+
+    def to_dict(self) -> dict:
+        """
+        Convert to dictionary format expected by embed-document
+        """
+        return {
+            "id": self.id,
+            "content": self.content,
+            "metadata": self.metadata,
+        }
+
+
+class ChunkingResponse(BaseModel):
+    """
+    Represents the response from chunking a document
+    """
+
+    chunks: List[Chunk]
+    total_chunks: int
+    document_id: str
+    chunk_type: str
+
+    def to_dict(self) -> dict:
+        """
+        Convert response to dictionary with chunks in embed-document format
+        """
+        return {
+            "chunks": [chunk.to_dict() for chunk in self.chunks],
+            "total_chunks": self.total_chunks,
+            "document_id": self.document_id,
+            "chunk_type": self.chunk_type,
+        }
 
 
 class MarkdownChunker:
@@ -26,7 +57,7 @@ class MarkdownChunker:
         )
 
     def chunk_document(
-        self, doc_id: str, content: str, metadata: Optional[Dict[str, Any]] = None
+        self, document_id: str, content: str, metadata: Optional[Dict[str, Any]] = None
     ) -> List[Chunk]:
         """
         Split document into chunks based on markdown headers
@@ -51,7 +82,7 @@ class MarkdownChunker:
                 # 2. Document metadata
                 # 3. Additional passed metadata
                 chunk_metadata = {
-                    "doc_id": doc_id,
+                    "document_id": document_id,
                     "chunk_number": i + 1,
                     "total_chunks": len(splits),
                     "headers": split.metadata,
@@ -59,7 +90,7 @@ class MarkdownChunker:
                 }
 
                 chunk = Chunk(
-                    id=f"{doc_id}#chunk{i+1}",
+                    id=f"{document_id}#chunk{i+1}",
                     content=split.page_content,
                     metadata=chunk_metadata,
                 )

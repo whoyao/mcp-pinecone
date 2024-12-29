@@ -18,10 +18,25 @@ logger = logging.getLogger(__name__)
 
 # Pydantic moddel for a Pinecone record
 class PineconeRecord(BaseModel):
+    """
+    Represents a record in Pinecone
+    """
+
     id: str
     embedding: List[float]
     text: str
     metadata: Dict[str, Any]
+
+    def to_dict(self) -> dict:
+        """
+        Convert to dictionary format for JSON serialization
+        """
+        return {
+            "id": self.id,
+            "embedding": self.embedding,
+            "text": self.text,
+            "metadata": self.metadata,
+        }
 
 
 class PineconeClient:

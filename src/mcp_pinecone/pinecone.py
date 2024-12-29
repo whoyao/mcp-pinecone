@@ -135,6 +135,8 @@ class PineconeClient:
                 record_id = record.id
                 metadata = record.metadata
 
+                logger.info(f"Record: {metadata}")
+
                 # Add raw text to metadata
                 metadata["text"] = raw_text
                 vectors.append((record_id, vector_values, metadata))

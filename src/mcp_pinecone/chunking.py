@@ -1,5 +1,5 @@
 from typing import List, Dict, Any, Optional
-from langchain.text_splitter import MarkdownHeaderTextSplitter
+from langchain_text_splitters import MarkdownHeaderTextSplitter
 from pydantic import BaseModel
 
 
@@ -81,13 +81,16 @@ class MarkdownChunker:
                 # 1. Header hierarchy from the split
                 # 2. Document metadata
                 # 3. Additional passed metadata
+
                 chunk_metadata = {
                     "document_id": document_id,
                     "chunk_number": i + 1,
                     "total_chunks": len(splits),
-                    "headers": split.metadata,
-                    **(metadata or {}),
                 }
+
+                # Add any additional metadata
+                if metadata:
+                    chunk_metadata.update(metadata)
 
                 chunk = Chunk(
                     id=f"{document_id}#chunk{i+1}",

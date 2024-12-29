@@ -152,8 +152,9 @@ async def handle_list_tools() -> list[types.Tool]:
                 "properties": {
                     "document_id": {"type": "string"},
                     "text": {"type": "string"},
+                    "metadata": {"type": "object"},
                 },
-                "required": ["document_id", "text"],
+                "required": ["document_id", "text", "metadata"],
             },
         ),
         types.Tool(
@@ -172,7 +173,7 @@ async def handle_list_tools() -> list[types.Tool]:
                                 "content": {"type": "string"},
                                 "metadata": {"type": "object"},
                             },
-                            "required": ["id", "content"],
+                            "required": ["id", "content", "metadata"],
                         },
                     }
                 },
@@ -216,12 +217,13 @@ async def handle_list_tools() -> list[types.Tool]:
                 "properties": {
                     "document_id": {"type": "string"},
                     "text": {"type": "string"},
+                    "metadata": {"type": "object"},
                     "namespace": {
                         "type": "string",
                         "description": "Optional namespace to store the document in",
                     },
                 },
-                "required": ["document_id", "text"],
+                "required": ["document_id", "text", "metadata"],
             },
         ),
     ]
@@ -292,10 +294,15 @@ async def handle_call_tool(
             document_id = arguments.get("document_id")
             text = arguments.get("text")
             namespace = arguments.get("namespace")
+            metadata = arguments.get("metadata", {})
+
+            # Store a reference to the original non-chunked document id in the metadata
+            metadata["original_document_id"] = document_id
 
             # Chain the tools together internally
             chunks_result = await handle_call_tool(
-                "chunk-document", {"document_id": document_id, "text": text}
+                "chunk-document",
+                {"document_id": document_id, "text": text, "metadata": metadata},
             )
             chunks_data = json.loads(chunks_result[0].text)
 
@@ -304,7 +311,7 @@ async def handle_call_tool(
             )
             embed_data = json.loads(embed_result[0].text)
 
-            upsert_result = await handle_call_tool(
+            await handle_call_tool(
                 "upsert-document",
                 {
                     "embedded_chunks": embed_data["embedded_chunks"],
@@ -315,7 +322,7 @@ async def handle_call_tool(
             return [
                 types.TextContent(
                     type="text",
-                    text=json.dumps(upsert_result),
+                    text="Successfully processed document",
                 )
             ]
 
@@ -323,9 +330,12 @@ async def handle_call_tool(
             document_id = arguments.get("document_id")
             text = arguments.get("text")
             chunk_type = arguments.get("chunk_type", "markdown")
+            metadata = arguments.get("metadata", {})
 
             chunker = MarkdownChunker()
-            chunks = chunker.chunk_document(document_id=document_id, content=text)
+            chunks = chunker.chunk_document(
+                document_id=document_id, content=text, metadata=metadata
+            )
 
             response = ChunkingResponse(
                 chunks=chunks,
@@ -375,10 +385,16 @@ async def handle_call_tool(
             namespace = arguments.get("namespace")
             embedded_chunks = arguments.get("embedded_chunks", [])
 
-            pinecone_client.upsert_records(embedded_chunks, namespace=namespace)
+            records = [PineconeRecord(**record) for record in embedded_chunks]
+
+            result = pinecone_client.upsert_records(records, namespace=namespace)
+
+            count = result.upserted_count or 0
 
             return [
-                types.TextContent(type="text", text="Successfully upserted document")
+                types.TextContent(
+                    type="text", text=f"Successfully upserted {count} documents"
+                )
             ]
         else:
             raise MCPToolError(types.METHOD_NOT_FOUND, f"Unknown tool: {name}")

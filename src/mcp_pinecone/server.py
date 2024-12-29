@@ -476,7 +476,7 @@ async def main():
             write_stream,
             InitializationOptions(
                 server_name="pinecone-mcp",
-                server_version="0.1.4",
+                server_version="0.1.5",
                 capabilities=server.get_capabilities(
                     notification_options=NotificationOptions(resources_changed=True),
                     experimental_capabilities={},

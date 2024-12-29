@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.1.5] - 2024-12-29
+### Added
+- Added `process-document` tool to combine chunking, embedding, and upserting documents into Pinecone
+- Added `chunk-document` tool to explicitly chunk documents into chunks
+- Added `embed-document` tool to explicitly embed documents into Pinecone
+- Mention Pinecone api in README
+
 ## [0.1.4] - 2024-12-20
 ### Added
 - Added `langchain` dependency for chunking

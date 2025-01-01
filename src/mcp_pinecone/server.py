@@ -210,7 +210,7 @@ async def handle_list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="process-document",
-            description="Process a document by chunking, embedding, and upserting it into the knowledge base",
+            description="Process a document by optionally chunking, embedding, and upserting it into the knowledge base. Returns the document ID.",
             category="mutation",
             inputSchema={
                 "type": "object",
@@ -222,8 +222,28 @@ async def handle_list_tools() -> list[types.Tool]:
                         "type": "string",
                         "description": "Optional namespace to store the document in",
                     },
+                    "chunk_enabled": {
+                        "type": "boolean",
+                        "description": "Whether to chunk the document (default: false)",
+                        "default": False,
+                    },
                 },
                 "required": ["document_id", "text", "metadata"],
+            },
+        ),
+        types.Tool(
+            name="list-documents",
+            description="List all documents in the knowledge base by namespace",
+            category="read",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "namespace": {
+                        "type": "string",
+                        "description": "Namespace to list documents in",
+                    }
+                },
+                "required": ["namespace"],
             },
         ),
     ]
@@ -234,6 +254,11 @@ async def handle_call_tool(
     name: str, arguments: dict | None
 ) -> Sequence[Union[types.TextContent, types.ImageContent, types.EmbeddedResource]]:
     try:
+        if name == "list-documents":
+            namespace = arguments.get("namespace")
+            results = pinecone_client.list_records(namespace=namespace)
+            return [types.TextContent(type="text", text=json.dumps(results))]
+
         if name == "semantic-search":
             query = arguments.get("query")
             top_k = arguments.get("top_k", 10)
@@ -293,36 +318,51 @@ async def handle_call_tool(
         if name == "process-document":  # New combined tool
             document_id = arguments.get("document_id")
             text = arguments.get("text")
+            chunk_enabled = arguments.get("chunk_enabled", False)
             namespace = arguments.get("namespace")
             metadata = arguments.get("metadata", {})
 
-            # Store a reference to the original non-chunked document id in the metadata
-            metadata["original_document_id"] = document_id
+            if chunk_enabled:
+                chunks_result = await handle_call_tool(
+                    "chunk-document",
+                    {"document_id": document_id, "text": text, "metadata": metadata},
+                )
+                chunks_data = json.loads(chunks_result[0].text)
 
-            # Chain the tools together internally
-            chunks_result = await handle_call_tool(
-                "chunk-document",
-                {"document_id": document_id, "text": text, "metadata": metadata},
-            )
-            chunks_data = json.loads(chunks_result[0].text)
+                embed_result = await handle_call_tool(
+                    "embed-document", {"chunks": chunks_data["chunks"]}
+                )
+                embed_data = json.loads(embed_result[0].text)
 
-            embed_result = await handle_call_tool(
-                "embed-document", {"chunks": chunks_data["chunks"]}
-            )
-            embed_data = json.loads(embed_result[0].text)
+                await handle_call_tool(
+                    "upsert-document",
+                    {
+                        "embedded_chunks": embed_data["embedded_chunks"],
+                        "namespace": namespace,
+                    },
+                )
+            else:
+                # Process the document as a single piece
+                embedding = pinecone_client.generate_embeddings(text)
+                record = PineconeRecord(
+                    id=document_id,
+                    embedding=embedding,
+                    text=text,
+                    metadata=metadata,
+                )
 
-            await handle_call_tool(
-                "upsert-document",
-                {
-                    "embedded_chunks": embed_data["embedded_chunks"],
-                    "namespace": namespace,
-                },
-            )
+                await handle_call_tool(
+                    "upsert-document",
+                    {
+                        "embedded_chunks": [record.to_dict()],
+                        "namespace": namespace,
+                    },
+                )
 
             return [
                 types.TextContent(
                     type="text",
-                    text="Successfully processed document",
+                    text=f"Successfully processed document {'with' if chunk_enabled else 'without'} chunking. The document ID is {document_id}",
                 )
             ]
 
@@ -476,7 +516,7 @@ async def main():
             write_stream,
             InitializationOptions(
                 server_name="pinecone-mcp",
-                server_version="0.1.5",
+                server_version="0.1.6",
                 capabilities=server.get_capabilities(
                     notification_options=NotificationOptions(resources_changed=True),
                     experimental_capabilities={},

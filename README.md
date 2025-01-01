@@ -1,5 +1,7 @@
 # Pinecone Model Context Protocol Server for Claude Desktop.
 
+[![smithery badge](https://smithery.ai/badge/mcp-pinecone)](https://smithery.ai/server/mcp-pinecone)
+
 Read and write to a Pinecone index.
 
 
@@ -87,6 +89,14 @@ The server implements the ability to read and write to a Pinecone index.
 
 Note: embeddings are generated via Pinecone's inference API and chunking is done with a rudimentary markdown splitter (via `langchain`).
 ## Quickstart
+
+### Installing via Smithery
+
+To install Pinecone MCP Server for Claude Desktop automatically via [Smithery](https://smithery.ai/server/mcp-pinecone):
+
+```bash
+npx -y @smithery/cli install mcp-pinecone --client claude
+```
 
 ### Install the server
 

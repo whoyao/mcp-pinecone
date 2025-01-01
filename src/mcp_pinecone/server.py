@@ -279,10 +279,9 @@ async def handle_call_tool(
             formatted_text = "Retrieved Contexts:\n\n"
             for i, match in enumerate(matches, 1):
                 metadata = match.get("metadata", {})
-                formatted_text += f"[Result {i} - Similarity: {match['score']:.3f}]\n"
-                formatted_text += f"Document ID: {match['id']}\n"
+                formatted_text += f"Result {i} | Similarity: {match['score']:.3f} | Document ID: {match['id']}\n"
                 formatted_text += f"{metadata.get('text', '').strip()}\n"
-                formatted_text += "-" * 40 + "\n\n"
+                formatted_text += "-" * 10 + "\n\n"
 
             return [types.TextContent(type="text", text=formatted_text)]
 
@@ -448,7 +447,7 @@ async def handle_call_tool(
 async def handle_get_prompt(
     name: str, arguments: dict[str, str] | None
 ) -> types.GetPromptResult:
-    if name == "brain-query":
+    if name == "pinecone-query":
         query = arguments.get("query")
         if not query:
             raise ValueError("Query required")
@@ -464,25 +463,24 @@ async def handle_get_prompt(
         # - Similarity scores
         # - Separators between documents
 
-        prompt = f"""Human: You are an intelligent assistant tasked with answering questions based on the provided context. 
-Your responses should be:
-1. Accurate and directly based on the provided context
-2. Well-structured and clear
-3. Include relevant quotes when appropriate
-4. Acknowledge any limitations in the available information
-
-Retrieved Context:
-{search_results[0].text}
-
-Question: {query}
-
-Please provide a comprehensive response that:
-1. Directly answers the question
-2. Cites specific evidence from the context
-3. Notes any relevant connections between different parts of the context
-4. Acknowledges any areas where the context may be incomplete"""
-
-        return types.GetPromptResult(prompt=prompt)
+        return types.GetPromptResult(
+            messages=[
+                types.PromptMessage(
+                    role="user",
+                    content=types.TextContent(
+                        type="text",
+                        text=f"The following documents match the search query and will provide context: {search_results[0].text}",
+                    ),
+                ),
+                types.PromptMessage(
+                    role="user",
+                    content=types.TextContent(
+                        type="text",
+                        text=f"Answer the question: {query}",
+                    ),
+                ),
+            ]
+        )
 
     raise ValueError(f"Unknown prompt: {name}")
 
@@ -491,15 +489,15 @@ Please provide a comprehensive response that:
 async def handle_list_prompts() -> list[types.Prompt]:
     return [
         types.Prompt(
-            name="brain-query",
+            name="pinecone-query",
             description="Search knowledge base and construct an answer based on relevant pinecone documents",
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string"},
-                },
-                "required": ["query"],
-            },
+            arguments=[
+                types.PromptArgument(
+                    name="query",
+                    description="The question to answer",
+                    required=True,
+                )
+            ],
         )
     ]
 
@@ -516,7 +514,7 @@ async def main():
             write_stream,
             InitializationOptions(
                 server_name="pinecone-mcp",
-                server_version="0.1.6",
+                server_version="0.1.7",
                 capabilities=server.get_capabilities(
                     notification_options=NotificationOptions(resources_changed=True),
                     experimental_capabilities={},

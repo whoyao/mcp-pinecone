@@ -10,7 +10,6 @@ dependencies = [
  "langchain>=0.3.13",
  "mcp>=1.0.0",
  "pinecone>=5.4.1",
- "protobuf>=5.29.0",
  "python-dotenv>=1.0.1",
 ]
 classifiers = [

@@ -7,7 +7,8 @@ import mcp.types as types
 from mcp.server import Server
 from .pinecone import PineconeClient, PineconeRecord
 from .utils import MCPToolError
-from .chunking import MarkdownChunker, ChunkingResponse
+from .chunking import create_chunker, Chunk
+
 
 logger = logging.getLogger("pinecone-mcp")
 
@@ -73,11 +74,6 @@ ServerTools = [
                 "namespace": {
                     "type": "string",
                     "description": "Optional namespace to store the document in",
-                },
-                "chunk_enabled": {
-                    "type": "boolean",
-                    "description": "Whether to chunk the document (default: false)",
-                    "default": False,
                 },
             },
             "required": ["document_id", "text", "metadata"],
@@ -190,70 +186,31 @@ def process_document(
     arguments: dict | None, pinecone_client: PineconeClient
 ) -> list[types.TextContent]:
     """
-    Process a document by optionally chunking, embedding, and upserting it into the knowledge base. Returns the document ID.
+    Process a document by chunking, embedding, and upserting it into the knowledge base. Returns the document ID.
     """
     document_id = arguments.get("document_id")
     text = arguments.get("text")
-    chunk_enabled = arguments.get("chunk_enabled", False)
     namespace = arguments.get("namespace")
     metadata = arguments.get("metadata", {})
 
-    if chunk_enabled:
-        chunks_result = chunk_document(document_id, text, "markdown", metadata)
-        chunks_data = chunks_result.to_dict()
+    chunker = create_chunker(chunk_type="smart")
+    chunks = chunker.chunk_document(document_id, text, metadata)
 
-        embed_result = embed_document(chunks_data["chunks"], pinecone_client)
+    embed_result = embed_document(chunks, pinecone_client)
 
-        embedded_chunks = embed_result.get("embedded_chunks", None)
+    embedded_chunks = embed_result.get("embedded_chunks", None)
 
-        if embedded_chunks is None:
-            raise MCPToolError("No embedded chunks found")
+    if embedded_chunks is None:
+        raise MCPToolError("No embedded chunks found")
 
-        upsert_documents(embedded_chunks, pinecone_client)
-    else:
-        # Process the document as a single piece
-        embedding = pinecone_client.generate_embeddings(text)
-        record = PineconeRecord(
-            id=document_id,
-            embedding=embedding,
-            text=text,
-            metadata=metadata,
-        )
-
-        pinecone_client.upsert_records([record], namespace=namespace)
+    upsert_documents(embedded_chunks, pinecone_client, namespace)
 
     return [
         types.TextContent(
             type="text",
-            text=f"Successfully processed document {'with' if chunk_enabled else 'without'} chunking. The document ID is {document_id}",
+            text=f"Successfully processed document. The document ID is {document_id}",
         )
     ]
-
-
-def chunk_document(
-    document_id: str, text: str, chunk_type: str, metadata: dict
-) -> ChunkingResponse:
-    """
-    Chunk a document into smaller chunks.
-    Default chunk type is markdown.
-    """
-    chunker = MarkdownChunker()
-
-    chunks = chunker.chunk_document(
-        document_id=document_id, content=text, metadata=metadata
-    )
-
-    chunk_type = chunk_type or "markdown"
-
-    response = ChunkingResponse(
-        chunks=chunks,
-        total_chunks=len(chunks),
-        document_id=document_id,
-        chunk_type=chunk_type,
-    )
-
-    # Return the chunks as a list of text content
-    return response
 
 
 class EmbeddingResult(TypedDict):
@@ -262,7 +219,7 @@ class EmbeddingResult(TypedDict):
 
 
 def embed_document(
-    chunks: list[dict[str, Any]], pinecone_client: PineconeClient
+    chunks: list[Chunk], pinecone_client: PineconeClient
 ) -> EmbeddingResult:
     """
     Embed a list of chunks.
@@ -270,9 +227,9 @@ def embed_document(
     """
     embedded_chunks = []
     for chunk in chunks:
-        content = chunk.get("content")
-        chunk_id = chunk.get("id")
-        metadata = chunk.get("metadata", {})
+        content = chunk.content
+        chunk_id = chunk.id
+        metadata = chunk.metadata
 
         if not content or not chunk_id:
             logger.warning(f"Skipping invalid chunk: {chunk}")

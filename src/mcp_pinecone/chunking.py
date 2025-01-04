@@ -4,7 +4,7 @@ Provides configurable text splitting strategies optimized for LLM context window
 """
 
 from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 import tiktoken
 import logging
 from abc import ABC, abstractmethod
@@ -30,41 +30,23 @@ class Chunk(BaseModel):
         return {"id": self.id, "content": self.content, "metadata": self.metadata}
 
 
-class ChunkingResponse(BaseModel):
-    """Response from chunking operation"""
-
-    chunks: List[Chunk]
-    total_chunks: int
-    document_id: str
-    chunk_type: str
-
-    def to_dict(self) -> dict:
-        return {
-            "chunks": [chunk.to_dict() for chunk in self.chunks],
-            "total_chunks": self.total_chunks,
-            "document_id": self.document_id,
-            "chunk_type": self.chunk_type,
-        }
-
-
 class ChunkingConfig(BaseModel):
     """Configuration for chunking behavior"""
 
     target_tokens: int = Field(
         default=512,
         description="Target chunk size in tokens",
-        ge=1,  # Must be positive. This is the max allowed by the tokenizer.
+        gt=0,  # Must be positive
     )
     max_tokens: int = Field(
         default=1000,
         description="Maximum allowed tokens per chunk",
-        ge=1,
+        gt=0,
     )
     overlap_tokens: int = Field(
         default=50,
         description="Number of tokens to overlap",
         ge=0,
-        lt="target_tokens",  # Must be less than target size
     )
     tokenizer_model: str = Field(
         default="cl100k_base", description="Tokenizer model to use"
@@ -84,6 +66,17 @@ class ChunkingConfig(BaseModel):
         ],
         description="Separators in order of preference",
     )
+
+    @model_validator(mode="after")
+    def validate_tokens(self):
+        """Ensure overlap tokens are less than target tokens"""
+        if self.overlap_tokens >= self.target_tokens:
+            raise ValueError("overlap_tokens must be less than target_tokens")
+        if self.max_tokens < self.target_tokens:
+            raise ValueError(
+                "max_tokens must be greater than or equal to target_tokens"
+            )
+        return self
 
 
 class BaseChunker(ABC):
@@ -303,7 +296,6 @@ def create_chunker(
 
 __all__ = [
     "Chunk",
-    "ChunkingResponse",
     "ChunkingConfig",
     "BaseChunker",
     "SmartChunker",

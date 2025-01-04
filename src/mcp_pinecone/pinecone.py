@@ -1,4 +1,4 @@
-from pinecone import Pinecone, ServerlessSpec, FetchResponse
+from pinecone import Pinecone, ServerlessSpec, FetchResponse, UpsertResponse
 from typing import List, Dict, Any, Optional, Union
 
 from pydantic import BaseModel
@@ -112,7 +112,7 @@ class PineconeClient:
         self,
         records: List[PineconeRecord],
         namespace: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> UpsertResponse:
         """
         Upsert records into the Pinecone index.
 

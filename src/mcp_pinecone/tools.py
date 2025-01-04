@@ -116,7 +116,7 @@ def register_tools(server: Server, pinecone_client: PineconeClient):
     ) -> Sequence[Union[types.TextContent, types.ImageContent, types.EmbeddedResource]]:
         try:
             if name == ToolName.SEMANTIC_SEARCH:
-                return list_documents(arguments, pinecone_client)
+                return semantic_search(arguments, pinecone_client)
             if name == ToolName.PINECONE_STATS:
                 return pinecone_stats(pinecone_client)
             if name == ToolName.READ_DOCUMENT:
@@ -150,7 +150,7 @@ def pinecone_stats(pinecone_client: PineconeClient) -> list[types.TextContent]:
     return [types.TextContent(type="text", text=json.dumps(stats))]
 
 
-def read_document(
+def semantic_search(
     arguments: dict | None, pinecone_client: PineconeClient
 ) -> list[types.TextContent]:
     """
@@ -158,7 +158,7 @@ def read_document(
     """
     query = arguments.get("query")
     top_k = arguments.get("top_k", 10)
-    filters = arguments.get("filters")
+    filters = arguments.get("filters", {})
     namespace = arguments.get("namespace")
 
     results = pinecone_client.search_records(
@@ -247,6 +247,41 @@ def embed_document(
         embedded_chunks=embedded_chunks,
         total_embedded=len(embedded_chunks),
     )
+
+
+def read_document(
+    arguments: dict | None, pinecone_client: PineconeClient
+) -> list[types.TextContent]:
+    """
+    Read a single Pinecone document by ID
+    """
+    document_id = arguments.get("document_id")
+    namespace = arguments.get("namespace")
+    if not document_id:
+        raise ValueError("document_id is required")
+
+    # Fetch the record using your existing fetch_records method
+    record = pinecone_client.fetch_records([document_id], namespace=namespace)
+
+    # Get the vector data for this document
+    vector = record.vectors.get(document_id)
+    if not vector:
+        raise ValueError(f"Document {document_id} not found")
+
+    # Get metadata from the vector
+    metadata = vector.metadata if hasattr(vector, "metadata") else {}
+
+    # Format the document content
+    formatted_content = []
+    formatted_content.append(f"Document ID: {document_id}")
+    formatted_content.append("")  # Empty line for spacing
+
+    if metadata:
+        formatted_content.append("Metadata:")
+        for key, value in metadata.items():
+            formatted_content.append(f"{key}: {value}")
+
+    return [types.TextContent(type="text", text="\n".join(formatted_content))]
 
 
 def upsert_documents(

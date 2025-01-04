@@ -2,6 +2,8 @@
 
 [![smithery badge](https://smithery.ai/badge/mcp-pinecone)](https://smithery.ai/server/mcp-pinecone)
 
+[![PyPI - Downloads](https://img.shields.io/pypi/dd/mcp-pinecone?style=flat)](https://pypi.org/project/mcp-pinecone/)
+
 Read and write to a Pinecone index.
 
 

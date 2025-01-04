@@ -1,6 +1,7 @@
 import json
 import logging
 from typing import Dict, Any, TypedDict
+from enum import Enum
 from typing import Union, Sequence
 import mcp.types as types
 from mcp.server import Server
@@ -10,11 +11,19 @@ from .chunking import MarkdownChunker, ChunkingResponse
 
 logger = logging.getLogger("pinecone-mcp")
 
+
+class ToolName(str, Enum):
+    SEMANTIC_SEARCH = "semantic-search"
+    READ_DOCUMENT = "read-document"
+    PROCESS_DOCUMENT = "process-document"
+    LIST_DOCUMENTS = "list-documents"
+    PINECONE_STATS = "pinecone-stats"
+
+
 ServerTools = [
     types.Tool(
-        name="semantic-search",
-        description="Search pinecone knowledge base",
-        category="search",
+        name=ToolName.SEMANTIC_SEARCH,
+        description="Search pinecone for documents",
         inputSchema={
             "type": "object",
             "properties": {
@@ -38,8 +47,8 @@ ServerTools = [
         },
     ),
     types.Tool(
-        name="read-document",
-        description="Read a document from the pinecone knowledge base",
+        name=ToolName.READ_DOCUMENT,
+        description="Read a document from pinecone",
         inputSchema={
             "type": "object",
             "properties": {
@@ -53,8 +62,8 @@ ServerTools = [
         },
     ),
     types.Tool(
-        name="process-document",
-        description="Process a document by optionally chunking, embedding, and upserting it into the knowledge base. Returns the document ID.",
+        name=ToolName.PROCESS_DOCUMENT,
+        description="Process a document. This will optionally chunk, then embed, and upsert the document into pinecone.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -75,7 +84,7 @@ ServerTools = [
         },
     ),
     types.Tool(
-        name="list-documents",
+        name=ToolName.LIST_DOCUMENTS,
         description="List all documents in the knowledge base by namespace",
         inputSchema={
             "type": "object",
@@ -89,7 +98,7 @@ ServerTools = [
         },
     ),
     types.Tool(
-        name="pinecone-stats",
+        name=ToolName.PINECONE_STATS,
         description="Get stats about the Pinecone index specified in this server",
         inputSchema={
             "type": "object",
@@ -110,15 +119,15 @@ def register_tools(server: Server, pinecone_client: PineconeClient):
         name: str, arguments: dict | None
     ) -> Sequence[Union[types.TextContent, types.ImageContent, types.EmbeddedResource]]:
         try:
-            if name == "semantic-search":
+            if name == ToolName.SEMANTIC_SEARCH:
                 return list_documents(arguments, pinecone_client)
-            if name == "pinecone-stats":
+            if name == ToolName.PINECONE_STATS:
                 return pinecone_stats(pinecone_client)
-            if name == "read-document":
+            if name == ToolName.READ_DOCUMENT:
                 return read_document(arguments, pinecone_client)
-            if name == "process-document":
+            if name == ToolName.PROCESS_DOCUMENT:
                 return process_document(arguments, pinecone_client)
-            if name == "list-documents":
+            if name == ToolName.LIST_DOCUMENTS:
                 return list_documents(arguments, pinecone_client)
 
         except Exception as e:

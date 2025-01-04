@@ -19,7 +19,7 @@ classifiers = [
 ]
 [[project.authors]]
 name = "Navishkar Rao"
-email = "sirmews@gmail.com"
+email = "nav@perfectlycromulent.dev"
 
 [build-system]
 requires = [ "hatchling",]

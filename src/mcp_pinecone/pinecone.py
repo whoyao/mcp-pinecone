@@ -186,6 +186,41 @@ class PineconeClient:
             logger.error(f"Error searching records: {e}")
             raise
 
+    def stats(self) -> Dict[str, Any]:
+        """
+        Get detailed statistics about the index including:
+        - Total vector count
+        - Index dimension
+        - Index fullness
+        - Namespace-specific statistics
+
+        Returns:
+            Dict[str, Any]: A dictionary containing:
+                - namespaces: Dict mapping namespace names to their statistics
+                - dimension: Dimension of the indexed vectors
+                - index_fullness: Fullness of the index (0-1 scale)
+                - total_vector_count: Total number of vectors across all namespaces
+
+        """
+        try:
+            stats = self.index.describe_index_stats()
+            # Convert namespaces to dict - each NamespaceSummary needs to be converted to dict
+            namespaces_dict = {}
+            for ns_name, ns_summary in stats.namespaces.items():
+                namespaces_dict[ns_name] = {
+                    "vector_count": ns_summary.vector_count,
+                }
+
+            return {
+                "namespaces": namespaces_dict,
+                "dimension": stats.dimension,
+                "index_fullness": stats.index_fullness,
+                "total_vector_count": stats.total_vector_count,
+            }
+        except Exception as e:
+            logger.error(f"Error getting stats: {e}")
+            raise
+
     def delete_records(
         self, ids: List[str], namespace: Optional[str] = None
     ) -> Dict[str, Any]:

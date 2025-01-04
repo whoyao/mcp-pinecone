@@ -130,7 +130,6 @@ async def handle_list_tools() -> list[types.Tool]:
         types.Tool(
             name="read-document",
             description="Read a document from the pinecone knowledge base",
-            category="read",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -146,7 +145,6 @@ async def handle_list_tools() -> list[types.Tool]:
         types.Tool(
             name="chunk-document",
             description="First step in document storage process. Chunks a document into smaller segments for optimal storage and retrieval. Must be called before upsert-document.",
-            category="mutation",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -160,7 +158,6 @@ async def handle_list_tools() -> list[types.Tool]:
         types.Tool(
             name="embed-document",
             description="Second step in document storage process. Embeds a document into the knowledge base as a vector. Must be used after chunk-document. Expects chunks from the chunk-document response.",
-            category="mutation",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -183,7 +180,6 @@ async def handle_list_tools() -> list[types.Tool]:
         types.Tool(
             name="upsert-document",
             description="Third step in document storage process. Upserts a document into the knowledge base. Must be used after chunk-document and embed-document. Expects embeddings from the embed-document response.",
-            category="mutation",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -211,7 +207,6 @@ async def handle_list_tools() -> list[types.Tool]:
         types.Tool(
             name="process-document",
             description="Process a document by optionally chunking, embedding, and upserting it into the knowledge base. Returns the document ID.",
-            category="mutation",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -234,7 +229,6 @@ async def handle_list_tools() -> list[types.Tool]:
         types.Tool(
             name="list-documents",
             description="List all documents in the knowledge base by namespace",
-            category="read",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -244,6 +238,15 @@ async def handle_list_tools() -> list[types.Tool]:
                     }
                 },
                 "required": ["namespace"],
+            },
+        ),
+        types.Tool(
+            name="pinecone-stats",
+            description="Get stats about the Pinecone index specified in this server",
+            inputSchema={
+                "type": "object",
+                "properties": {},
+                "required": [],
             },
         ),
     ]
@@ -258,6 +261,10 @@ async def handle_call_tool(
             namespace = arguments.get("namespace")
             results = pinecone_client.list_records(namespace=namespace)
             return [types.TextContent(type="text", text=json.dumps(results))]
+
+        if name == "pinecone-stats":
+            stats = pinecone_client.stats()
+            return [types.TextContent(type="text", text=json.dumps(stats))]
 
         if name == "semantic-search":
             query = arguments.get("query")

@@ -7,6 +7,8 @@ from pydantic import AnyUrl
 import mcp.server.stdio
 from .pinecone import PineconeClient
 from .tools import register_tools
+from .prompts import register_prompts
+import importlib.metadata
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("pinecone-mcp")
@@ -96,68 +98,15 @@ def format_binary_content(vector_data: dict) -> bytes:
     return content
 
 
-@server.get_prompt()
-async def handle_get_prompt(
-    name: str, arguments: dict[str, str] | None
-) -> types.GetPromptResult:
-    if name == "pinecone-query":
-        query = arguments.get("query")
-        if not query:
-            raise ValueError("Query required")
-
-        # The semantic search already includes the full text in the metadata
-        # It's formatted in search_results[0].text which contains:
-        # - Document contents
-        # - Similarity scores
-        # - Separators between documents
-
-        return types.GetPromptResult(
-            messages=[
-                types.PromptMessage(
-                    role="user",
-                    content=types.TextContent(
-                        type="text",
-                        text=f"The following documents match the search query and will provide context: {search_results[0].text}",
-                    ),
-                ),
-                types.PromptMessage(
-                    role="user",
-                    content=types.TextContent(
-                        type="text",
-                        text=f"Answer the question: {query}",
-                    ),
-                ),
-            ]
-        )
-
-    raise ValueError(f"Unknown prompt: {name}")
-
-
-@server.list_prompts()
-async def handle_list_prompts() -> list[types.Prompt]:
-    return [
-        types.Prompt(
-            name="pinecone-query",
-            description="Search knowledge base and construct an answer based on relevant pinecone documents",
-            arguments=[
-                types.PromptArgument(
-                    name="query",
-                    description="The question to answer",
-                    required=True,
-                )
-            ],
-        )
-    ]
-
-
 async def main():
     logger.info("Starting Pinecone MCP server")
 
     global pinecone_client
     pinecone_client = PineconeClient()
 
-    # Register tools
+    # Register tools and prompts
     register_tools(server, pinecone_client)
+    register_prompts(server, pinecone_client)
 
     async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
         await server.run(
@@ -165,7 +114,7 @@ async def main():
             write_stream,
             InitializationOptions(
                 server_name="pinecone-mcp",
-                server_version="0.1.7",
+                server_version=importlib.metadata.version("mcp-pinecone"),
                 capabilities=server.get_capabilities(
                     notification_options=NotificationOptions(resources_changed=True),
                     experimental_capabilities={},

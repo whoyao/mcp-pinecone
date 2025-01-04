@@ -28,7 +28,9 @@ flowchart TB
         subgraph Tools["Implemented Tools"]
             SemSearch[semantic-search]
             ReadDoc[read-document]
-            UpsertDoc[upsert-document]
+            ListDocs[list-documents]
+            PineconeStats[pinecone-stats]
+            ProcessDoc[process-document]
         end
     end
 
@@ -82,12 +84,11 @@ The server implements the ability to read and write to a Pinecone index.
 
 - `semantic-search`: Search for records in the Pinecone index.
 - `read-document`: Read a document from the Pinecone index.
-- `upsert-document`: Upsert a document into the Pinecone index.
+- `list-documents`: List all documents in the Pinecone index.
+- `pinecone-stats`: Get stats about the Pinecone index, including the number of records, dimensions, and namespaces.
 - `process-document`: Process a document into chunks and upsert them into the Pinecone index. This performs the overall steps of chunking, embedding, and upserting.
-- `chunk-document`: Chunk a document into chunks.
-- `embed-document`: Generate embeddings for a document using Pinecone's inference API.
 
-Note: embeddings are generated via Pinecone's inference API and chunking is done with a rudimentary markdown splitter (via `langchain`).
+Note: embeddings are generated via Pinecone's inference API and chunking is done with a token-based chunker. Written by copying a lot from langchain and debugging with Claude.
 ## Quickstart
 
 ### Installing via Smithery

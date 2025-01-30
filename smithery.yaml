@@ -1,0 +1,21 @@
+# Smithery configuration file: https://smithery.ai/docs/config#smitheryyaml
+
+startCommand:
+  type: stdio
+  configSchema:
+    # JSON Schema defining the configuration options for the MCP.
+    type: object
+    required:
+      - indexName
+      - apiKey
+    properties:
+      indexName:
+        type: string
+        description: The name of the Pinecone index.
+      apiKey:
+        type: string
+        description: The API key for accessing Pinecone.
+  commandFunction:
+    # A function that produces the CLI command to start the MCP on stdio.
+    |-
+    config => ({command: 'uv', args: ['run', 'mcp-pinecone', '--index-name', config.indexName, '--api-key', config.apiKey]})

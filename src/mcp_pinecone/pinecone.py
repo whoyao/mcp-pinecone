@@ -1,20 +1,25 @@
 from pinecone import Pinecone, ServerlessSpec, FetchResponse, UpsertResponse
 from typing import List, Dict, Any, Optional, Union
+import os
 
 from pydantic import BaseModel
 from .constants import (
-    INFERENCE_DIMENSION,
     PINECONE_INDEX_NAME,
     PINECONE_API_KEY,
-    INFERENCE_MODEL,
 )
-from dotenv import load_dotenv
 import logging
 
-load_dotenv()
+from llama_index.core import VectorStoreIndex, Settings
+from llama_index.vector_stores.pinecone import PineconeVectorStore
+from llama_index.embeddings.openai import OpenAIEmbedding
+from llama_index.core.retrievers import VectorIndexRetriever
+from llama_index.core.response_synthesizers import get_response_synthesizer
+
 
 logger = logging.getLogger(__name__)
 
+# OpenAI embedding dimension (text-embedding-ada-002)
+OPENAI_EMBEDDING_DIMENSION = 1536
 
 # Pydantic moddel for a Pinecone record
 class PineconeRecord(BaseModel):
@@ -46,13 +51,35 @@ class PineconeClient:
 
     def __init__(self):
         self.pc = Pinecone(api_key=PINECONE_API_KEY)
+        
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not openai_api_key:
+            raise ValueError("OPENAI_API_KEY environment variable is required for OpenAI embeddings")
+        self.embed_model = OpenAIEmbedding(api_key=openai_api_key)
+        Settings.embed_model = self.embed_model
+
         # Initialize index after checking/creating
         self.ensure_index_exists()
         desc = self.pc.describe_index(PINECONE_INDEX_NAME)
-        self.index = self.pc.Index(
+        self.pinecone_index = self.pc.Index(
             name=PINECONE_INDEX_NAME,
             host=desc.host,  # Get the proper host from the index description
         )
+        self.vector_store = PineconeVectorStore(pinecone_index=self.pinecone_index)
+        self.index = VectorStoreIndex.from_vector_store(
+            vector_store=self.vector_store,
+            embed_model=self.embed_model
+        )
+
+        self.retriever = VectorIndexRetriever(
+            index=self.index,
+            similarity_top_k=5
+        )
+
+        # 创建响应合成器
+        self.response_synthesizer = get_response_synthesizer()
+        # 创建查询引擎用于生成总结
+        self.query_engine = self.index.as_query_engine()
 
     def ensure_index_exists(self):
         """
@@ -74,12 +101,12 @@ class PineconeClient:
 
     def create_index(self):
         """
-        Create a serverless index with integrated inference.
+        Create a serverless index with OpenAI embedding dimension.
         """
         try:
             return self.pc.create_index(
                 name=PINECONE_INDEX_NAME,
-                dimension=INFERENCE_DIMENSION,
+                dimension=OPENAI_EMBEDDING_DIMENSION,
                 metric="cosine",
                 deletion_protection="disabled",  # Consider enabling for production
                 spec=ServerlessSpec(cloud="aws", region="us-east-1"),
@@ -90,7 +117,7 @@ class PineconeClient:
 
     def generate_embeddings(self, text: str) -> List[float]:
         """
-        Generate embeddings for a given text using Pinecone Inference API.
+        Generate embeddings for a given text using OpenAI embedding model.
 
         Parameters:
             text: The text to generate embeddings for.
@@ -98,15 +125,13 @@ class PineconeClient:
         Returns:
             List[float]: The embeddings for the text.
         """
-        response = self.pc.inference.embed(
-            model=INFERENCE_MODEL,
-            inputs=[text],
-            parameters={"input_type": "passage", "truncate": "END"},
-        )
-        # if the response is empty, raise an error
-        if not response.data:
+        try:
+            # Use OpenAI embedding model
+            embeddings = self.embed_model.get_text_embedding(text)
+            return embeddings
+        except Exception as e:
+            logger.error(f"Failed to generate embeddings for text: {text}, error: {e}")
             raise ValueError(f"Failed to generate embeddings for text: {text}")
-        return response.data[0].values
 
     def upsert_records(
         self,
@@ -156,10 +181,10 @@ class PineconeClient:
         include_metadata: bool = True,
     ) -> Dict[str, Any]:
         """
-        Search records using integrated inference.
+        Search records using OpenAI embeddings.
 
         Parameters:
-            query: The query to search for.
+            query: The query to search for (text or pre-computed embedding vector).
             top_k: The number of results to return.
             namespace: Optional namespace to search in.
             filter: Optional filter to apply to the search.
@@ -169,19 +194,36 @@ class PineconeClient:
             Dict[str, Any]: The search results from Pinecone.
         """
         try:
-            # If query is text, use our custom function to get embeddings
-            if isinstance(query, str):
-                vector = self.generate_embeddings(query)
-            else:
-                vector = query
+            # If query is text, use OpenAI embedding model to get embeddings
+            if top_k:
+                self.retriever.similarity_top_k = top_k
 
-            return self.index.query(
-                vector=vector,
-                top_k=top_k,
-                namespace=namespace,
-                include_metadata=include_metadata,
-                filter=filter,
-            )
+            nodes = self.retriever.retrieve(query)
+
+                        # 提取每个节点的内容和元数据
+            results = []
+            for node in nodes:
+                content = node.get_content()
+                metadata = node.metadata
+                score = node.score
+                source = metadata.get('google_drive_link', 'Unknown source')
+                results.append({
+                    'text': content,
+                    'source': source,
+                    'metadata': metadata,
+                    'score': score,
+                    'id': node.id,
+                })
+            
+            return results
+            
+            # return self.index.query(
+            #     vector=vector,
+            #     top_k=top_k,
+            #     namespace=namespace,
+            #     include_metadata=include_metadata,
+            #     filter=filter,
+            # )
         except Exception as e:
             logger.error(f"Error searching records: {e}")
             raise

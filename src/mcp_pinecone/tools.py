@@ -169,13 +169,13 @@ def semantic_search(
         namespace=namespace,
     )
 
-    matches = results.get("matches", [])
+    # matches = results.get("matches", [])
 
     # Format results with rich context
     formatted_text = "Retrieved Contexts:\n\n"
-    for i, match in enumerate(matches, 1):
+    for i, match in enumerate(results, 1):
         metadata = match.get("metadata", {})
-        formatted_text += f"Result {i} | Similarity: {match['score']:.3f} | Document ID: {match['id']}\n"
+        formatted_text += f"Result {i} | Similarity: {match['score']:.3f} | Source: {match['source']} | Document ID: {match['id']}\n"
         formatted_text += f"{metadata.get('text', '').strip()}\n"
         formatted_text += "-" * 10 + "\n\n"
 

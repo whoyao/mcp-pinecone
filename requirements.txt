@@ -1,0 +1,19 @@
+# mcp-pinecone 项目依赖
+# 使用 uv 推荐，但也可以使用 pip install -r requirements.txt
+
+# 核心依赖
+httpx>=0.28.0
+jsonschema>=4.23.0
+mcp>=1.0.0
+pinecone>=5.4.1
+python-dotenv>=1.0.1
+tiktoken>=0.8.0
+
+# OpenAI 集成
+openai>=1.0.0
+llama-index-embeddings-openai>=0.1.0
+
+# 开发依赖（可选）
+# pytest>=7.0.0
+# black>=23.0.0
+# flake8>=6.0.0 

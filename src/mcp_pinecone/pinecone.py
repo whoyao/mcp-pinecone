@@ -166,7 +166,7 @@ class PineconeClient:
                 metadata["text"] = raw_text
                 vectors.append((record_id, vector_values, metadata))
 
-            return self.index.upsert(vectors=vectors, namespace=namespace)
+            return self.pinecone_index.upsert(vectors=vectors, namespace=namespace)
 
         except Exception as e:
             logger.error(f"Error upserting records: {e}")
@@ -194,36 +194,23 @@ class PineconeClient:
             Dict[str, Any]: The search results from Pinecone.
         """
         try:
-            # If query is text, use OpenAI embedding model to get embeddings
-            if top_k:
-                self.retriever.similarity_top_k = top_k
+            # If query is text, generate embeddings using OpenAI
+            if isinstance(query, str):
+                vector = self.generate_embeddings(query)
+            else:
+                vector = query
 
-            nodes = self.retriever.retrieve(query)
-
-                        # 提取每个节点的内容和元数据
-            results = []
-            for node in nodes:
-                content = node.get_content()
-                metadata = node.metadata
-                score = node.score
-                source = metadata.get('google_drive_link', 'Unknown source')
-                results.append({
-                    'text': content,
-                    'source': source,
-                    'metadata': metadata,
-                    'score': score,
-                    'id': node.id,
-                })
+            # Use Pinecone index directly for searching
+            results = self.pinecone_index.query(
+                vector=vector,
+                top_k=top_k,
+                namespace=namespace,
+                include_metadata=include_metadata,
+                filter=filter,
+            )
             
             return results
             
-            # return self.index.query(
-            #     vector=vector,
-            #     top_k=top_k,
-            #     namespace=namespace,
-            #     include_metadata=include_metadata,
-            #     filter=filter,
-            # )
         except Exception as e:
             logger.error(f"Error searching records: {e}")
             raise
@@ -245,7 +232,7 @@ class PineconeClient:
 
         """
         try:
-            stats = self.index.describe_index_stats()
+            stats = self.pinecone_index.describe_index_stats()
             # Convert namespaces to dict - each NamespaceSummary needs to be converted to dict
             namespaces_dict = {}
             for ns_name, ns_summary in stats.namespaces.items():
@@ -274,7 +261,7 @@ class PineconeClient:
             namespace: Optional namespace to delete from
         """
         try:
-            return self.index.delete(ids=ids, namespace=namespace)
+            return self.pinecone_index.delete(ids=ids, namespace=namespace)
         except Exception as e:
             logger.error(f"Error deleting records: {e}")
             raise
@@ -296,7 +283,7 @@ class PineconeClient:
             Exception: If there is an error fetching the records.
         """
         try:
-            return self.index.fetch(ids=ids, namespace=namespace)
+            return self.pinecone_index.fetch(ids=ids, namespace=namespace)
         except Exception as e:
             logger.error(f"Error fetching records: {e}")
             raise
@@ -317,7 +304,7 @@ class PineconeClient:
         """
         try:
             # Using list_paginated for single-page results
-            response = self.index.list_paginated(
+            response = self.pinecone_index.list_paginated(
                 prefix=prefix, limit=limit, namespace=namespace
             )
 

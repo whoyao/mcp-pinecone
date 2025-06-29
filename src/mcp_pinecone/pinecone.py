@@ -212,7 +212,7 @@ class PineconeClient:
                     'source': source,
                     'metadata': metadata,
                     'score': score,
-                    'id': node.id,
+                    'id': node.node_id,
                 })
             
             return results

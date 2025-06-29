@@ -13,6 +13,8 @@ dependencies = [
  "tiktoken>=0.8.0",
  "openai>=1.0.0",
  "llama-index-embeddings-openai>=0.1.0",
+ "llama-index-vector-stores-pinecone>=0.1.0",
+ "llama-index-llms-openai>=0.1.0",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",

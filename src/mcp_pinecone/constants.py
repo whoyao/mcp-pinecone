@@ -1,9 +1,6 @@
 # Index name
 import os
 import argparse
-from dotenv import load_dotenv
-
-load_dotenv()
 
 
 def get_pinecone_config():
